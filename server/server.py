@@ -139,7 +139,7 @@ class BBSServer:
         bar = "=" * w
 
         # Block letters using tools/blockletters.py - safe CP437 chars only
-        art_text = block_render("NETRUNNER", size="tiny", fill="#", blank=" ")
+        art_text = block_render("NETRUNNER", size="small", fill="#", blank=" ")
         art_lines = art_text.split("\n")
 
         # ANSI color shortcuts
