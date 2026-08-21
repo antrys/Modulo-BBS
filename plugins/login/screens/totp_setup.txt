@@ -1,18 +1,14 @@
-{CLEAR}{HOME}{BRIGHT_MAGENTA}{BOLD}
-############################################################
-#                                                          #
-#          T W O - F A C T O R   A U T H E N T I C A T I O N #
-#                          (Setup)                        #
-############################################################
-{RESET}
+{CLEAR}{HOME}{BRIGHT_CYAN}{BOLD}============================================================{RESET}
+{BRIGHT_CYAN}{BOLD}              MODULO BBS -- TOTP SETUP{RESET}
+{BRIGHT_CYAN}{BOLD}============================================================{RESET}
 
-{BRIGHT_WHITE}Scan the QR code with your authenticator app, or -- since this
-is a terminal -- type the secret below manually into your app
-(e.g. Google Authenticator / Authy / andOTP).{RESET}
+{BRIGHT_GREEN}Two-factor authentication setup.{RESET}
 
-{BRIGHT_CYAN}Secret:     {BOLD}{SECRET}{RESET}
-{BRIGHT_BLACK}URI:        {URI}{RESET}
+{BRIGHT_WHITE}Add this secret to your authenticator app:{RESET}
+{BRIGHT_YELLOW}{SECRET}{RESET}
 
-{BRIGHT_YELLOW}When prompted, enter the 6-digit code from your app.{RESET}
+{BRIGHT_WHITE}Or scan this URI:{RESET}
+{BRIGHT_YELLOW}otpauth://totp/ModuloBBS:{USERNAME}?secret={SECRET}{RESET}
 
-{BRIGHT_WHITE}
+{BRIGHT_BLACK}------------------------------------------------------------{RESET}
+{BRIGHT_CYAN}Enter verification code: {RESET}

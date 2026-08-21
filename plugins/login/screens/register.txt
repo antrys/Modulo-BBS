@@ -1,18 +1,13 @@
-{CLEAR}{HOME}{BRIGHT_YELLOW}{BOLD}
-############################################################
-#                                                          #
-#          N E W   U S E R   R E G I S T R A T I O N        #
-#                                                          #
-############################################################
-{RESET}
+{CLEAR}{HOME}{BRIGHT_CYAN}{BOLD}============================================================{RESET}
+{BRIGHT_CYAN}{BOLD}              MODULO BBS -- REGISTER{RESET}
+{BRIGHT_CYAN}{BOLD}============================================================{RESET}
 
-{BRIGHT_WHITE}Welcome to Modulo BBS! Please fill in the fields below.{RESET}
+{BRIGHT_GREEN}Create a new account.{RESET}
 
-{BRIGHT_BLACK}Username:     lowercase letters, digits, '_' and '-' only.{RESET}
-{BRIGHT_BLACK}Password:     stored as a bcrypt hash -- never in plaintext.{RESET}
-{BRIGHT_BLACK}Display name: the name other users will see.{RESET}
-{BRIGHT_BLACK}Email:        optional, used only for account recovery.{RESET}
+{BRIGHT_CYAN}Username: {RESET}{BRIGHT_WHITE}{USERNAME}{RESET}
+{BRIGHT_CYAN}Password: {RESET}{BRIGHT_WHITE}{PASSWORD}{RESET}
+{BRIGHT_CYAN}Display Name: {RESET}{BRIGHT_WHITE}{DISPLAY_NAME}{RESET}
+{BRIGHT_CYAN}Email: {RESET}{BRIGHT_WHITE}{EMAIL}{RESET}
 
-{BRIGHT_GREEN}Type {BOLD}Q{RESET}{BRIGHT_GREEN} at any prompt to cancel.{RESET}
-
-{BRIGHT_YELLOW}
+{BRIGHT_BLACK}------------------------------------------------------------{RESET}
+{BRIGHT_YELLOW}Press {BOLD}Y{RESET}{BRIGHT_YELLOW} to confirm, {BOLD}C{RESET}{BRIGHT_YELLOW} to cancel.{RESET}
