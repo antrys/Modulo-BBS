@@ -393,7 +393,7 @@ async def start_ssh_server(bbs, host: str = "127.0.0.1", port: int = 6422):
         logger.info(f"Generated RSA host key: {rsa_key_path}")
 
     def server_factory():
-        return BBSSHServer(bbs)
+        return BBSSSHServer(bbs)
 
     server = await asyncssh.create_server(
         server_factory,
