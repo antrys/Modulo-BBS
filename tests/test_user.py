@@ -1,12 +1,10 @@
-"""
-Tests for the core User model and UserManager.
+"""Tests for the core User model and UserManager.
 
 These cover dataclass behavior, permission/flag semantics, bcrypt password
 hashing, and JSON-file storage. Tests use a ``tmp_path`` scratch directory so
 they never touch the real ``users/`` directory.
 """
 
-import asyncio
 import json
 
 import pytest
@@ -21,14 +19,19 @@ from core.user import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+import asyncio
 
 def run(coro):
-    """Run a coroutine to completion in a fresh event loop."""
     return asyncio.run(coro)
 
+# ---------------------------------------------------------------------------
+# Helpers
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def manager(tmp_path):
@@ -36,8 +39,18 @@ def manager(tmp_path):
     return UserManager(users_dir=tmp_path / "users")
 
 
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 # User dataclass + accessors
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 
 def test_default_fields():
@@ -113,8 +126,18 @@ def test_verify_password_bcrypt():
     assert u.verify_password("wrong") is False
 
 
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 # Serialization round-trip
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 
 def test_to_from_dict_round_trip():
@@ -138,8 +161,18 @@ def test_to_from_dict_round_trip():
     assert restored.created == u.created
 
 
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 # UserManager CRUD
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 
 def test_create_and_get(manager):
@@ -274,8 +307,18 @@ def test_list(manager):
     run(_test())
 
 
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 # Storage layout
+import asyncio
+
+def run(coro):
+    return asyncio.run(coro)
+
 # ---------------------------------------------------------------------------
 
 def test_storage_layout_one_file_per_user(manager):
