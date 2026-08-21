@@ -137,13 +137,13 @@ class BBSServer:
         w = min(session.terminal_width, 60)
         bar = "=" * w
 
-        # Pure ASCII art - no ANSI codes mixed in
+        # Safe CP437 ASCII art - only characters guaranteed in codepage
         art_lines = [
-            "  _   _    _    ____  _  __   _____   __  _ ",
-            " | \\ | |  / \\  |  _ \\| |/ /  / _ \\ \\ / / / |",
-            " |  \\| | / _ \\ | | | | ' /  | | | \\ V /  | |",
-            " | |\\  |/ ___ \\| |_| | . \\  | |_| || |   |_|",
-            " |_| \\_/_/   \\_\\____/|_|\\_\\  \\___/ |_|   (_)",
+            "NNN  EEEE TTT  RRR  UU  NN  NN NN  NN EEEE RRR  ",
+            "N NN E    T    R R  UU  NNN NN NN  NN E    R R  ",
+            "N  NN EEE  T    RRR  UU N NNNN NNNN N EEE  RRR  ",
+            "N NN E    T    R R  UU NN  NN NN  NN E    R R  ",
+            "NNN  EEEE T    R R  UU NN  NN NN  NN EEEE R R  ",
         ]
 
         # ANSI color shortcuts
