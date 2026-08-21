@@ -13,6 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from core.app import BBSApp
+from core.loader import PluginLoader
 from server.server import BBSServer
 
 
@@ -57,7 +59,11 @@ async def main():
             ssh_port = int(sys.argv[idx + 1])
             enable_ssh = True
 
-    server = BBSServer(host=host, port=port, max_nodes=max_nodes, plain_text=plain_text)
+    # Build the core application object, load plugins, then wire the server.
+    bbs = BBSApp(max_nodes=max_nodes)
+    bbs.plugins = await PluginLoader().load(bbs)
+
+    server = BBSServer(bbs=bbs, host=host, port=port, plain_text=plain_text)
 
     # Start SSH server if requested
     tasks = [server.start()]
