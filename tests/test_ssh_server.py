@@ -1,0 +1,155 @@
+"""Tests for the Modulo BBS SSH transport (server/ssh_server.py).
+
+The SSH session bridges the asyncssh channel to a real ``Session`` object
+(reader/writer) so the shared plugins -- especially the ``login`` plugin,
+which owns the whole auth experience -- drive the session exactly as they do
+over telnet. These tests drive ``BBSSSHSession._shell_loop`` against a fake
+channel and scripted input, and assert the banner, login, main menu, and
+disconnect all come from the plugin system rather than hardcoded logic.
+
+The async flows are driven synchronously via ``asyncio.run`` (matching the
+style used in the other test modules).
+"""
+
+import asyncio
+
+from core.app import BBSApp
+from plugins.login import LoginPlugin
+from server.ssh_server import BBSSSHSession
+
+
+class FakeChan:
+    """Minimal asyncssh-channel stand-in capturing everything written to the
+    wire."""
+
+    def __init__(self):
+        self.buffer = bytearray()
+        self._closed = False
+
+    def write(self, data):
+        self.buffer.extend(data)
+
+    def is_closing(self):
+        return self._closed
+
+    def close(self):
+        self._closed = True
+
+    def get_extra_info(self, name):
+        if name == "peername":
+            return ("127.0.0.1", 22222)
+        return None
+
+    @property
+    def text(self):
+        return bytes(self.buffer).decode("latin-1", errors="replace")
+
+
+def _make_app(tmp_path):
+    """BBSApp wired to throwaway users storage, with the login plugin loaded."""
+    app = BBSApp(users_dir=tmp_path / "users")
+    plugin = LoginPlugin()
+    plugin.on_load(app)
+    app.plugins = [plugin]
+    return app
+
+
+async def _run_session(app, lines):
+    """Bridge a fake chan into the shared app, script the input, and run the
+    full SSH shell loop. Returns (session, fake_chan)."""
+    chan = FakeChan()
+    sess = BBSSSHSession(app)
+    sess.connection_made(chan)          # binds reader/writer to the live loop
+    for line in lines:
+        sess.data_received((line + "\n").encode("latin-1"), None)
+    await sess._shell_loop()
+    return sess, chan
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _create_user(app, username="alice", password="sekrit", display_name="Alice"):
+    return run(app.users.create(
+        username=username, password=password, display_name=display_name,
+    ))
+
+
+# ---------------------------------------------------------------------------
+# Login plugin drives auth over SSH
+# ---------------------------------------------------------------------------
+
+def test_ssh_login_flow_uses_login_plugin(tmp_path):
+    app = _make_app(tmp_path)
+    _create_user(app)
+
+    # Correct login, then disconnect via Q from the post-login main menu.
+    sess, chan = run(_run_session(app, ["alice", "sekrit", "Q"]))
+
+    # Authenticated by the *login plugin*, not hardcoded SSH logic.
+    assert sess._session is None                  # cleaned up after disconnect
+    text = chan.text
+    assert "MODULO" in text.upper()               # core banner kept in SSH flow
+    assert "Welcome back, Alice" in text          # login plugin's success line
+    assert "Main Menu" in text                    # post-login menu shown
+    assert "System Info" in text
+    assert "Goodbye! Thanks for calling." in text
+    assert chan.is_closing() or "Goodbye!" in text
+
+
+def test_ssh_login_wrong_password_then_quit(tmp_path):
+    app = _make_app(tmp_path)
+    _create_user(app, username="bob", password="right", display_name="Bob")
+
+    # Wrong password -> login plugin loops again -> Q quits (not authenticated).
+    sess, chan = run(_run_session(app, ["bob", "wrong", "Q"]))
+
+    text = chan.text
+    assert "Invalid username or password" in text
+    assert "Main Menu" not in text               # never reached (no auth)
+    assert "Goodbye!" in text
+    assert chan.is_closing()
+    del sess
+
+
+def test_ssh_shows_banner_before_login(tmp_path):
+    app = _make_app(tmp_path)
+    _create_user(app)
+
+    sess, chan = run(_run_session(app, ["alice", "sekrit", "Q"]))
+    text = chan.text
+    # Banner (with node id) appears before the login prompt from the plugin.
+    assert "Welcome to Modulo BBS" in text
+    assert "MODULO" in text.upper()
+    assert "Login:" in text or "Password:" in text
+    del sess
+
+
+# ---------------------------------------------------------------------------
+# Registration path (login plugin exposes it from the SSH login screen)
+# ---------------------------------------------------------------------------
+
+def test_ssh_registration_via_login_screen(tmp_path):
+    app = _make_app(tmp_path)
+
+    # From the SSH login screen, press R, fill the registration form.
+    sess, chan = run(_run_session(app, [
+        "R", "carol", "pw456", "pw456", "Carol", "c@x.io", "n", "Q",
+    ]))
+
+    assert sess._session is None
+    text = chan.text
+    assert "Account created. Welcome, Carol!" in text   # login plugin's screen
+    assert "Main Menu" in text
+    # The account was actually persisted by the login plugin.
+    assert run(app.users.get("carol")) is not None
+
+
+# ---------------------------------------------------------------------------
+# runner (mirrors the other test modules)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import pytest
+    raise SystemExit(pytest.main([__file__, "-v"]))

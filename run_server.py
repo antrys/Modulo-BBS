@@ -69,7 +69,9 @@ async def main():
     tasks = [server.start()]
     if enable_ssh:
         from server.ssh_server import start_ssh_server
-        tasks.append(start_ssh_server(server, host=host, port=ssh_port))
+        # SSH shares the same BBSApp (plugins drive auth and the menu),
+        # just like the telnet server.
+        tasks.append(start_ssh_server(bbs, host=host, port=ssh_port))
 
     await asyncio.gather(*tasks)
 
