@@ -144,6 +144,8 @@ class BBSSSHSession(asyncssh.SSHServerSession):
         elif choice == 'Q':
             await self._send(b"\r\nGoodbye! Thanks for calling.\r\n")
             self._session.state = SessionState.DISCONNECTED
+            if self._chan and not self._chan.is_closing():
+                self._chan.close()
             return
 
         else:
