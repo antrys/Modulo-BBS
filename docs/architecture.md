@@ -45,7 +45,7 @@ modulo-bbs/
 └── .gitignore
 ```
 
-Each plugin at `plugins/<name>/` is self-contained: code, data, templates — everything in one place. Like WordPress.
+Each plugin at `plugins/<name>/` is self-contained: code, screens, data — everything in one place. Like WordPress. Standard layout: `screens/` for display templates, `data/` for runtime data, `*.py` for code.
 
 ## Core Components
 

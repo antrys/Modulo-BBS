@@ -226,31 +226,45 @@ class Plugin:
 
 ### Plugin Directory Structure
 
-Each plugin is a self-contained directory at `plugins/<name>/`. Code, data, templates — everything lives in one place. Like WordPress.
+Each plugin is a self-contained directory at `plugins/<name>/`. Code, data, screens — everything lives in one place. Like WordPress.
+
+### Standard Plugin Directory Layout
 
 ```
 plugins/
 ├── base.py                    # Plugin interface
-├── auth/
+├── login/                     # Login plugin (example)
 │   ├── __init__.py            # Plugin class
-│   ├── models.py              # Auth-specific models
+│   ├── login.py               # Login logic
+│   ├── totp.py                # TOTP support
+│   ├── screens/               # ← Display templates (sysops edit here)
+│   │   ├── login.txt
+│   │   ├── register.txt
+│   │   └── totp.txt
 │   └── data/                  # Runtime data
-│       └── sessions.json
+│       └── totp_secrets.json
 ├── messageboard/
 │   ├── __init__.py
-│   ├── models.py
-│   ├── ui.py
+│   ├── screens/
+│   │   ├── board_list.txt
+│   │   ├── thread_view.txt
+│   │   └── post_editor.txt
 │   └── data/
 │       ├── boards.json
 │       └── posts/
-├── files/
-│   ├── __init__.py
-│   └── data/
-│       └── uploads/
-└── mythirdpartyplugin/
+└── files/
     ├── __init__.py
-    └── whatever.db            # They can use SQLite, flat files, anything
+    ├── screens/
+    │   ├── file_list.txt
+    │   └── upload.txt
+    └── data/
+        └── uploads/
 ```
+
+**Convention:**
+- `screens/` — display templates (sysops edit these to customize look)
+- `data/` — runtime data (JSON, SQLite, files)
+- `*.py` — plugin code
 
 **Rule:** Everything for a plugin lives in `plugins/<name>/`. Don't touch `plugins/<other_name>/`.
 
