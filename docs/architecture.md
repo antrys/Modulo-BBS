@@ -1,8 +1,8 @@
-# NetRunner BBS — Architecture
+# Modulo BBS — Architecture
 
 ## Overview
 
-NetRunner is a modular, plugin-based Bulletin Board System built in Python 3.11+ with asyncio. It supports multiple transports (telnet, SSH) and exposes an API for external tooling.
+Modulo is a modular, plugin-based Bulletin Board System built in Python 3.11+ with asyncio. It supports multiple transports (telnet, SSH) and exposes an API for external tooling.
 
 ## Design Principles
 
@@ -109,7 +109,7 @@ Adding a new transport (e.g., WebSocket) means implementing this interface.
 
 ```python
 class Plugin:
-    """Base class for all NetRunner plugins."""
+    """Base class for all Modulo plugins."""
     
     name: str              # Unique identifier ("messageboard")
     version: str           # Semver ("1.0.0")

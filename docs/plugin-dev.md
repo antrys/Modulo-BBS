@@ -1,8 +1,8 @@
-# NetRunner BBS — Plugin Development Guide
+# Modulo BBS — Plugin Development Guide
 
 ## Overview
 
-NetRunner uses a plugin architecture. Every feature (message boards, file areas, chat, etc.) is a plugin that registers with the core. This guide explains how to write your own plugins.
+Modulo uses a plugin architecture. Every feature (message boards, file areas, chat, etc.) is a plugin that registers with the core. This guide explains how to write your own plugins.
 
 ## Quick Start
 

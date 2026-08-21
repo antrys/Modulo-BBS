@@ -1,4 +1,4 @@
-# NetRunner BBS — SysOp Guide
+# Modulo BBS — SysOp Guide
 
 ## Quick Start
 

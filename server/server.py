@@ -139,7 +139,7 @@ class BBSServer:
         bar = "=" * w
 
         # Block letters using tools/blockletters.py - safe CP437 chars only
-        art_text = block_render("NETRUNNER", size="small", fill="#", blank=" ")
+        art_text = block_render("MODULO", size="small", fill="#", blank=" ")
         art_lines = art_text.split("\n")
 
         # ANSI color shortcuts
@@ -159,7 +159,7 @@ class BBSServer:
         lines.append("")
         lines.append(D + f"  Node {session.node_id} | {session.terminal_type} ({session.terminal_width}x{session.terminal_height})" + R)
         lines.append("")
-        lines.append(W + "  Welcome to NetRunner BBS" + R)
+        lines.append(W + "  Welcome to Modulo BBS" + R)
         lines.append(D + "  A retro bulletin board system with a modern twist." + R)
         lines.append(D + "  Version 0.1-alpha | Python " + sys.version.split()[0] + R)
         lines.append("")
@@ -224,7 +224,7 @@ class BBSServer:
         elif choice == '3':
             info = (
                 "\r\n--- System Information ---\r\n"
-                f"  Name:     NetRunner BBS\r\n"
+                f"  Name:     Modulo BBS\r\n"
                 f"  Version:  0.1-alpha\r\n"
                 f"  Runtime:  Python {sys.version.split()[0]}\r\n"
                 f"  Nodes:    {self.session_manager.active_count}/{self.max_nodes}\r\n"
