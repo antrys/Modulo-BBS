@@ -9,3 +9,4 @@ build/
 .env
 *.log
 keys/
+users/
