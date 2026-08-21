@@ -1,0 +1,18 @@
+{CLEAR}{HOME}{BRIGHT_YELLOW}{BOLD}
+############################################################
+#                                                          #
+#          N E W   U S E R   R E G I S T R A T I O N        #
+#                                                          #
+############################################################
+{RESET}
+
+{BRIGHT_WHITE}Welcome to Modulo BBS! Please fill in the fields below.{RESET}
+
+{BRIGHT_BLACK}Username:     lowercase letters, digits, '_' and '-' only.{RESET}
+{BRIGHT_BLACK}Password:     stored as a bcrypt hash -- never in plaintext.{RESET}
+{BRIGHT_BLACK}Display name: the name other users will see.{RESET}
+{BRIGHT_BLACK}Email:        optional, used only for account recovery.{RESET}
+
+{BRIGHT_GREEN}Type {BOLD}Q{RESET}{BRIGHT_GREEN} at any prompt to cancel.{RESET}
+
+{BRIGHT_YELLOW}

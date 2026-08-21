@@ -1,0 +1,16 @@
+{CLEAR}{HOME}{BRIGHT_CYAN}{BOLD}
+############################################################
+#                                                          #
+#          M O D U L O   B B S   --   L O G I N             #
+#                                                          #
+############################################################
+{RESET}
+
+{BRIGHT_WHITE}This system is for registered users only.{RESET}
+{BRIGHT_YELLOW}New here?    Type {BOLD}R{RESET}{BRIGHT_YELLOW} to register a new account.{RESET}
+{BRIGHT_WHITE}Return?      Type {BOLD}Q{RESET}{BRIGHT_WHITE} to go back to the main menu.{RESET}
+
+{BRIGHT_BLACK}------------------------------------------------------------{RESET}
+{BRIGHT_GREEN}Please enter your username and password below.{RESET}
+
+{BRIGHT_CYAN}

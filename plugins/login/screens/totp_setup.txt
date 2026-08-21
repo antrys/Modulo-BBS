@@ -1,0 +1,18 @@
+{CLEAR}{HOME}{BRIGHT_MAGENTA}{BOLD}
+############################################################
+#                                                          #
+#          T W O - F A C T O R   A U T H E N T I C A T I O N #
+#                          (Setup)                        #
+############################################################
+{RESET}
+
+{BRIGHT_WHITE}Scan the QR code with your authenticator app, or -- since this
+is a terminal -- type the secret below manually into your app
+(e.g. Google Authenticator / Authy / andOTP).{RESET}
+
+{BRIGHT_CYAN}Secret:     {BOLD}{SECRET}{RESET}
+{BRIGHT_BLACK}URI:        {URI}{RESET}
+
+{BRIGHT_YELLOW}When prompted, enter the 6-digit code from your app.{RESET}
+
+{BRIGHT_WHITE}

@@ -1,0 +1,3 @@
+# login plugin support files
+totp_secrets.json
+totp_secrets.json.tmp

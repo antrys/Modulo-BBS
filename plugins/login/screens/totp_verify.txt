@@ -1,0 +1,13 @@
+{CLEAR}{HOME}{BRIGHT_CYAN}{BOLD}
+############################################################
+#                                                          #
+#          T W O - F A C T O R   A U T H E N T I C A T I O N #
+#                       (Verify)                          #
+############################################################
+{RESET}
+
+{BRIGHT_WHITE}This account uses two-factor authentication.{RESET}
+{BRIGHT_GREEN}Please enter the current 6-digit code from your app:{RESET}
+{BRIGHT_BLACK}(Type {BOLD}Q{RESET}{BRIGHT_BLACK} to cancel / return to the menu.){RESET}
+
+{BRIGHT_WHITE}

@@ -4,6 +4,8 @@ Each telnet connection gets a Session object that tracks state,
 user info, and node assignment.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from enum import Enum, auto
@@ -37,6 +39,8 @@ class Session:
     state: SessionState = SessionState.CONNECTED
     authenticated: bool = False
     username: str = ""
+    # The authenticated User (set by the login/auth plugin on success).
+    user: User | None = None
     
     # Terminal info
     terminal_width: int = 80
