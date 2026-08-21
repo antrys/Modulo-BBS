@@ -75,7 +75,7 @@ def test_guest_is_read_only():
 
 def test_mod_gets_moderation_actions():
     u = User("d", "Dave", "h", flags=["user", "mod"])
-    assert u.has_permission("messageboard:delete") is True  # admin action, mod=>no
+    assert u.has_permission("messageboard:delete") is True  # mod-level action
     assert u.has_permission("messageboard:edit") is True
     assert u.has_permission("messageboard:moderate") is True
 
