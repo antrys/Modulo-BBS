@@ -224,54 +224,52 @@ class Plugin:
 7. User exits plugin → core calls `plugin.on_session_end(session)`
 8. Server shutdown → core calls `plugin.on_unload()` for each plugin
 
-### Plugin Discovery
+### Plugin Directory Structure
+
+Each plugin is a self-contained directory at `plugins/<name>/`. Code, data, templates — everything lives in one place. Like WordPress.
 
 ```
 plugins/
-├── base.py           # Plugin interface
-├── auth/             # Authentication plugin
-│   └── __init__.py   # exports AuthPlugin
-├── messageboard/     # Message board plugin
-│   └── __init__.py   # exports MessageboardPlugin
-├── files/            # File transfer plugin
-│   └── __init__.py
-└── ...
+├── base.py                    # Plugin interface
+├── auth/
+│   ├── __init__.py            # Plugin class
+│   ├── models.py              # Auth-specific models
+│   └── data/                  # Runtime data
+│       └── sessions.json
+├── messageboard/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── ui.py
+│   └── data/
+│       ├── boards.json
+│       └── posts/
+├── files/
+│   ├── __init__.py
+│   └── data/
+│       └── uploads/
+└── mythirdpartyplugin/
+    ├── __init__.py
+    └── whatever.db            # They can use SQLite, flat files, anything
 ```
 
-Core scans `plugins/*/` for `__init__.py` that exports a `Plugin` subclass.
+**Rule:** Everything for a plugin lives in `plugins/<name>/`. Don't touch `plugins/<other_name>/`.
 
-## Storage System
+**Exception:** Core owns `users/` at the root level since everything references users.
 
-### Convention
+### Plugin Storage
 
-```
-data/
-├── users/              # Core (User model)
-├── auth/               # Auth plugin
-├── messageboard/       # Messageboard plugin
-│   ├── boards.json
-│   └── posts/
-├── files/              # File plugin
-│   └── uploads/
-└── chat/               # Chat plugin
-```
-
-**Rule:** `data/<plugin_name>/` is your directory. Do whatever you want inside it. Don't touch `data/<other_plugin>/`.
-
-### Optional Storage API
-
-Core provides a thin helper for plugins that want it:
+Each plugin has a `data/` subdirectory for runtime data. The plugin decides what goes inside — JSON, SQLite, flat files, whatever.
 
 ```python
-# Key-value (JSON files)
+# Get plugin's data directory
+plugin_dir = bbs.storage.dir("messageboard") → Path("plugins/messageboard/data/")
+
+# Simple key-value (optional convenience)
 bbs.storage.get("messageboard", "last_post_id") → int
 bbs.storage.set("messageboard", "last_post_id", 42)
-
-# Plugin directory
-bbs.storage.dir("messageboard") → Path("data/messageboard/")
 ```
 
-Plugins that need complex storage (SQLite, etc.) just use their directory directly.
+Plugins that need complex storage just use their `data/` directory directly. The API is optional — not required.
 
 ## Permission System
 

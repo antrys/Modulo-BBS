@@ -15,41 +15,37 @@ Modulo is a modular, plugin-based Bulletin Board System built in Python 3.11+ wi
 ## Directory Structure
 
 ```
-netrunner/
-├── core/                    # Session, menu, auth, transport
+modulo-bbs/
+├── core/                    # Session, user model, event bus, transport
 │   ├── session.py           # Session state machine + node tracking
-│   ├── menu.py              # Menu system + command dispatch
-│   ├── auth.py              # User authentication
-│   ├── events.py            # Event bus for inter-module communication
+│   ├── user.py              # User model + CRUD
+│   ├── events.py            # Event bus
 │   └── transport/           # Telnet + SSH implementations
 │       ├── telnet.py
 │       └── ssh.py
-├── api/                     # External API layer
-│   ├── server.py            # HTTP/WebSocket server
-│   ├── routes/              # API endpoint handlers
-│   └── schema.py            # Request/response models
-├── plugins/                 # Feature plugins (each self-contained)
-│   ├── base.py              # Plugin base class + interface
+├── plugins/                 # All plugins (self-contained)
+│   ├── base.py              # Plugin interface
+│   ├── auth/                # Authentication (login, register)
 │   ├── messageboard/        # Message boards + threads
 │   ├── files/               # File areas + transfers
 │   ├── bulletin/            # System bulletins + news
 │   ├── chat/                # Inter-node live chat
-│   ├── doors/               # Door game loader
-│   └── usermgmt/            # User profiles + stats
+│   └── doors/               # Door game loader
 ├── shared/                  # Shared utilities
 │   ├── telnet_protocol.py   # RFC 854/855, ANSI codes
 │   └── blockletters.py      # ASCII art renderer
 ├── tools/                   # Dev + ops tools
 ├── docs/                    # Documentation
-│   ├── architecture.md      # This file
-│   ├── sysop-guide.md       # System operator manual
-│   ├── plugin-dev.md        # 3rd party plugin development
-│   └── api-reference.md     # HTTP API documentation
 ├── keys/                    # SSH host keys (gitignored)
-├── data/                    # Runtime data (users, messages, files)
+├── users/                   # User data (core-owned)
 ├── run_server.py            # Entry point
+├── config.yaml              # Server configuration
+├── LICENSE                  # Apache 2.0
+├── TRADEMARK.md             # Trademark policy
 └── .gitignore
 ```
+
+Each plugin at `plugins/<name>/` is self-contained: code, data, templates — everything in one place. Like WordPress.
 
 ## Core Components
 
