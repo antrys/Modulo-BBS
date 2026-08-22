@@ -350,7 +350,8 @@ server:
   
 plugins:
   enabled:
-    - auth
+    - login
+    - mainmenu
     - messageboard
     - files
     - chat
@@ -359,14 +360,63 @@ storage:
   backend: "json"  # json | sqlite (future)
 ```
 
+## Logon Sequence (Sysop-Configurable)
+
+The order of what a caller sees — splash screens, login, bulletins, menu — is
+data, not code. Core owns the **sequence runner**; everything in the sequence
+is pluggable. There is no `built-in` step type.
+
+```yaml
+logon_sequence:
+  - screen:splash.txt        # sysop splash (MODULO blockletters lives here)
+  - plugin:login             # auth + optional TOTP
+  - screen:welcome.txt       # welcome mat
+  - plugin:bulletins         # new-since-last-call (skips itself if nothing new)
+  - plugin:mainmenu          # the menu is just another plugin
+```
+
+### Step types
+
+| Step | What it does |
+|------|--------------|
+| `plugin:<name>` | Run the named plugin's session flow |
+| `screen:<file>` | Display `screens/<file>`, no input |
+
+Sysops reorder, remove, or duplicate steps freely. Two splash screens before
+login? Add two `screen:` lines. Don't want bulletins? Delete the line.
+
+### Why core owns the runner
+
+1. **State machine lives in core.** The sequence is where the session
+   transitions from CONNECTED → AUTHENTICATED → IN_MENU; core must gate on it.
+2. **Observability.** Each step emits `logon:step {session, step, result}` so
+   instrumentation sees the whole flow even when sysops reorder it.
+3. **Transport consistency.** Telnet and SSH run the same sequence through one
+   code path — no per-transport hardcoded flows (and one renderer kills the
+   screen-width wrapping class of bugs).
+
+### Main menu is a plugin
+
+There is no core menu system. A `mainmenu` plugin iterates `bbs.plugins`,
+sorts by `menu_order`, and renders each plugin's `menu_label` / `menu_key`
+(every plugin already self-describes via the base class). Swap in a different
+menu plugin and nothing else changes.
+
+### Hard boundary: disconnect
+
+Plugins interpret keystrokes (`Q` → return False), but closing the socket is a
+core primitive: `bbs.disconnect(session)`. Plugins never touch the writer
+directly, so a buggy plugin can always be cleaned up reliably by core.
+
 ## Implementation Order
 
-1. Plugin base class + loader
-2. Event bus
-3. User model + storage
-4. Auth plugin (extract from core)
-5. Menu system (extract from core)
-6. Message board plugin
-7. File transfer plugin
-8. Chat plugin
-9. HTTP API
+1. Plugin base class + loader ✓
+2. Event bus ✓
+3. User model + storage ✓
+4. Login plugin ✓
+5. Logon sequence runner (core) + config-driven step list
+6. Mainmenu plugin (extract from server.py)
+7. Message board plugin
+8. File transfer plugin
+9. Chat plugin
+10. HTTP API
