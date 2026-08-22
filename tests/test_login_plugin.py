@@ -449,9 +449,9 @@ def test_screen_loader_substitutes_ansi_and_placeholders(tmp_path):
     from shared.telnet_protocol import ANSI as A
     assert A.CLEAR_SCREEN in text
 
-    setup = screens.render("totp_setup.txt", SECRET="ABC", URI="otpauth://x")
+    setup = screens.render("totp_setup.txt", SECRET="ABC", USERNAME="dave")
     assert "ABC" in setup
-    assert "otpauth://x" in setup
+    assert "otpauth://totp/ModuloBBS:dave?secret=ABC" in setup
 
 
 # ---------------------------------------------------------------------------

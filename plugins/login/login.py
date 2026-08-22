@@ -79,9 +79,15 @@ class ScreenLoader:
         self._cache: dict[str, str] = {}
 
     def load(self, name: str) -> str:
-        """Return the ANSI-substituted template for ``name`` (cached)."""
+        """Return the ANSI-substituted template for ``name`` (cached).
+
+        Reads bytes and decodes manually so ``\\r\\n`` line endings survive:
+        ``Path.read_text()`` applies universal-newline translation which
+        collapses CRLF to bare LF, causing staircase wrapping in SyncTERM
+        (bare LF moves down a row without returning to column 0).
+        """
         if name not in self._cache:
-            text = (self.screens_dir / name).read_text("utf-8")
+            text = (self.screens_dir / name).read_bytes().decode("utf-8")
             for token, code in _ANSI_TOKENS.items():
                 text = text.replace("{" + token + "}", code)
             self._cache[name] = text
