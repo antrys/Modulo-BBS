@@ -387,6 +387,40 @@ Design notes:
 * Legacy user files written before groups existed load cleanly and default
   to `["user"]`.
 
+## Keybindings
+
+Every plugin may ship a `keys` file in its plugin directory
+(`plugins/<name>/keys`) binding command names to keys. Format: plain text,
+one binding per line, comma-separated — deliberately not YAML, because the
+audience is a sysop in SyncTERM at 1am.
+
+```
+# plugins/messageboard/keys
+L, LIST        # list messages
+P, POST
+R, REPLY
+Q, QUIT
+```
+
+**Semantics** (implemented once in core via `bbs.keys_for(name, defaults)`):
+
+| Rule | Behavior |
+|------|----------|
+| File absent | plugin's documented defaults apply unchanged |
+| Name omitted from file | that command is **disabled** (omit = kill switch) |
+| Unknown name in file | logged warning, line ignored (typos fail safe) |
+| Case | normalized to uppercase everywhere |
+| Comments/blanks | `#` lines and blank lines ignored; CRLF tolerated |
+| Unparseable line | logged warning, skipped |
+
+**Well-known defaults:** conventional actions use standard keys unless the
+sysop rebinds them — `Q` = quit/back, `?` = help. A plugin author who ships
+a `quit: X` default is wrong and will be judged harshly.
+
+**Plugins never hardcode keys.** They call `bbs.keys_for(plugin_name,
+defaults)` and read the result; disabled commands simply don't appear, and
+the plugin's input loop treats those keys as unknown input.
+
 ## HTTP API (Future)
 
 REST + WebSocket API for web frontends, mobile apps, CLI tools.

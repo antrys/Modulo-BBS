@@ -13,6 +13,7 @@ attribute names are kept on the same object for clarity.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from core.events import EventBus
@@ -58,6 +59,17 @@ class BBSApp:
             if getattr(p, "name", None) == name:
                 return p
         return None
+
+    def keys_for(self, plugin_name: str, defaults: dict[str, str]) -> dict[str, str]:
+        """Load keybindings for a plugin (see core/keys.py for semantics).
+
+        Plugins call this instead of importing the loader directly, so the
+        storage location stays a core decision.
+        """
+        from core.keys import load_keys
+
+        plugins_dir = Path(__file__).resolve().parent.parent / "plugins"
+        return load_keys(plugins_dir, plugin_name, defaults)
 
     # -- socket control ------------------------------------------------------
     #
