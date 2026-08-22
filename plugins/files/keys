@@ -1,0 +1,6 @@
+# Files keybindings (KEY, NAME). Omit a line to disable that command.
+L, LIST
+U, UPLOAD
+D, DOWNLOAD
+Z, DELETE
+Q, QUIT
