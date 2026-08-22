@@ -51,8 +51,9 @@ class RegistrationFlow:
                     f"{ANSI.RESET}\r\n"
                 )
                 continue
-            display_name = (await tty.read_line("Display name: ")).strip()
-            email = (await tty.read_line("Email: ")).strip()
+            display_name = (await tty.read_line("Display name [optional]: ")).strip()
+            location = (await tty.read_line("Location [optional]: ")).strip()
+            email = (await tty.read_line("Email [optional]: ")).strip()
 
             try:
                 user = await self.bbs.users.create(
@@ -60,6 +61,7 @@ class RegistrationFlow:
                     password=password,
                     display_name=display_name or None,
                     email=email or None,
+                    location=location or None,
                 )
             except UserExistsError:
                 await tty.send(
@@ -82,7 +84,7 @@ class RegistrationFlow:
 
             await tty.send(
                 f"{ANSI.BRIGHT_GREEN}Account created. Welcome, "
-                f"{user.display_name or user.username}!{ANSI.RESET}\r\n"
+                f"{user.shown_name()}!{ANSI.RESET}\r\n"
             )
 
             # Optional immediate TOTP enrolment.

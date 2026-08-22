@@ -232,6 +232,6 @@ class LoginFlow:
         self.bbs.events.emit("user:login", {"session": session, "user": user})
         await tty.send(
             f"{ANSI.BRIGHT_GREEN}Welcome back, "
-            f"{user.display_name or user.username}!{ANSI.RESET}\r\n"
+            f"{user.shown_name()}!{ANSI.RESET}\r\n"
         )
         return True

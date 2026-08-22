@@ -140,9 +140,10 @@ class User:
     """
 
     username: str
-    display_name: str
-    password_hash: str
+    display_name: str = ""
+    password_hash: str = ""
     email: str = ""
+    location: str = ""
     created: datetime = field(default_factory=_now)
     last_login: datetime | None = field(default=None)
     flags: list[str] = field(default_factory=lambda: ["user"])
@@ -150,6 +151,10 @@ class User:
     preferences: dict = field(default_factory=dict)
 
     # -- convenience accessors --------------------------------------------
+
+    def shown_name(self) -> str:
+        """Name to display to other users: display_name if set, else username."""
+        return self.display_name.strip() or self.username
 
     def has_flag(self, flag: str) -> bool:
         """True if the user holds the given flag (e.g. ``"mod"``)."""
@@ -197,6 +202,7 @@ class User:
             "display_name": self.display_name,
             "password_hash": self.password_hash,
             "email": self.email,
+            "location": self.location,
             "created": self.created.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "flags": list(self.flags),
@@ -206,12 +212,17 @@ class User:
 
     @classmethod
     def from_dict(cls, data: dict) -> "User":
-        """Build a User from a dict (as loaded from JSON storage)."""
+        """Build a User from a dict (as loaded from JSON storage).
+
+        Tolerant of legacy files missing newer optional fields (e.g.
+        ``location``) -- they default to empty.
+        """
         return cls(
             username=data["username"],
-            display_name=data["display_name"],
+            display_name=data.get("display_name", ""),
             password_hash=data["password_hash"],
             email=data.get("email", ""),
+            location=data.get("location", ""),
             created=_parse_datetime(data.get("created", _now())),
             last_login=(
                 _parse_datetime(data["last_login"])
@@ -240,7 +251,7 @@ class UserManager:
 
     # Fields that may be modified via update(); anything else is rejected.
     _UPDATABLE = {
-        "display_name", "email", "password", "password_hash",
+        "display_name", "email", "location", "password", "password_hash",
         "flags", "stats", "preferences", "last_login",
     }
 
@@ -321,16 +332,21 @@ class UserManager:
         display_name: str | None = None,
         email: str | None = None,
         flags: list[str] | None = None,
+        location: str | None = None,
     ) -> User:
         """Create and persist a new user account.
 
         Passwords are stored as a bcrypt hash, never in plaintext. Raises
         :class:`UserExistsError` if the username is already taken.
+
+        ``display_name`` is optional -- when blank/None it stays empty and
+        callers fall back to ``username`` for display. Same for ``location``.
         """
         username = self._validate_username(username)
         if not password:
             raise ValueError("Password must not be empty.")
-        display_name = (display_name or username).strip() or username
+        display_name = (display_name or "").strip()
+        location = (location or "").strip()
 
         # Hash in a worker thread so the event loop stays responsive.
         password_hash = await asyncio.to_thread(self._hash_password, password)
@@ -340,6 +356,7 @@ class UserManager:
             display_name=display_name,
             password_hash=password_hash,
             email=email or "",
+            location=location,
             flags=list(flags) if flags is not None else ["user"],
         )
 

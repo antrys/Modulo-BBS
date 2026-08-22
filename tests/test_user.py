@@ -192,7 +192,9 @@ def test_create_and_get(manager):
 def test_create_default_display_name_and_email(manager):
     async def _test():
         user = await manager.create("anon", "pw")
-        assert user.display_name == "anon"
+        # display_name is now optional: blank means "fall back to username"
+        assert user.display_name == ""
+        assert user.shown_name() == "anon"
         assert user.email == ""
 
     run(_test())

@@ -238,7 +238,7 @@ def test_login_flow_register_shortcut(tmp_path):
     bbs, totp, screens = _make_env(tmp_path)
     # From the login screen, press R to register, fill the form (no TOTP).
     s = make_session(inputs=[
-        "R", "bob", "pw123", "pw123", "Bobby", "bob@example.com", "n",
+        "R", "bob", "pw123", "pw123", "Bobby", "", "bob@example.com", "n",
     ])
     registered = capture(bbs.events, "auth:register")
 
@@ -264,7 +264,7 @@ def test_login_flow_q_returns_to_menu(tmp_path):
 
 def test_registration_creates_user_and_emits_event(tmp_path):
     bbs, totp, screens = _make_env(tmp_path)
-    s = make_session(inputs=["carol", "pw456", "pw456", "Carol", "c@x.io", "n"])
+    s = make_session(inputs=["carol", "pw456", "pw456", "Carol", "Neptune", "c@x.io", "n"])
     registered = capture(bbs.events, "auth:register")
 
     result = run(RegistrationFlow(bbs, totp, screens).run(s))
@@ -285,7 +285,7 @@ def test_registration_creates_user_and_emits_event(tmp_path):
 def test_registration_password_mismatch_retries(tmp_path):
     bbs, totp, screens = _make_env(tmp_path)
     # mismatched confirm -> retry -> success on second attempt
-    s = make_session(inputs=["dave", "pw1", "pw2", "dave", "pw1", "pw1", "Dave", "", "n"])
+    s = make_session(inputs=["dave", "pw1", "pw2", "dave", "pw1", "pw1", "Dave", "", "", "n"])
     registered = capture(bbs.events, "auth:register")
 
     result = run(RegistrationFlow(bbs, totp, screens).run(s))
@@ -300,8 +300,8 @@ def test_registration_rejects_duplicate_username(tmp_path):
     # first attempt fills a full form for "alice" (rejected because it exists),
     # then a second full form for "erin" succeeds.
     s = make_session(inputs=[
-        "alice", "x1", "x1", "Alice2", "e",
-        "erin", "x1", "x1", "Erin", "", "n",
+        "alice", "x1", "x1", "Alice2", "", "e",
+        "erin", "x1", "x1", "Erin", "", "", "n",
     ])
     registered = capture(bbs.events, "auth:register")
 
@@ -316,8 +316,8 @@ def test_registration_validate_username(tmp_path):
     # uppercase / bad characters are rejected (full form consumed), then a
     # valid one ("frank") succeeds.
     s = make_session(inputs=[
-        "Bad Name!", "x", "x", "", "",
-        "frank", "x", "x", "Frank", "", "n",
+        "Bad Name!", "x", "x", "", "", "",
+        "frank", "x", "x", "Frank", "Toronto", "", "n",
     ])
     registered = capture(bbs.events, "auth:register")
     result = run(RegistrationFlow(bbs, totp, screens).run(s))
