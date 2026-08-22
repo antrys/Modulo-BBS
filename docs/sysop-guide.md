@@ -43,7 +43,7 @@ kill $(lsof -t -i:6400) $(lsof -t -i:6422)
 
 ### Creating Users
 
-Users are stored in `data/users/`. Each user is a JSON file:
+Users are stored in `users/` at the project root. Each user is a JSON file:
 ```json
 {
     "username": "dave",
@@ -134,15 +134,16 @@ When all nodes are full, new connections get "All nodes busy" and are disconnect
 
 ### What to Back Up
 
-- `data/` — all user data, messages, files
+- `users/` — all user accounts (one JSON file per user)
+- `plugins/*/data/` — plugin runtime data (messages, uploads, chat logs)
 - `keys/` — SSH host keys (regenerate if lost, but clients will need to re-accept)
 - `config.yaml` — server configuration
 
 ### Backup Command
 
 ```bash
-tar czf netrunner-backup-$(date +%Y%m%d).tar.gz \
-    data/ keys/ config.yaml
+tar czf modulo-backup-$(date +%Y%m%d).tar.gz \
+    users/ plugins/*/data/ keys/ config.yaml
 ```
 
 ## Troubleshooting
@@ -194,7 +195,7 @@ This is adequate for a local/enthusiast BBS. For public-facing deployments, cons
 ### File Permissions
 
 ```bash
-chmod 700 data/          # User data
+chmod 700 users/ plugins/*/data/   # User + plugin data
 chmod 600 keys/*         # SSH keys
 chmod 644 config.yaml    # Config (readable, not writable by others)
 ```

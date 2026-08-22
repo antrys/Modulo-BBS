@@ -84,7 +84,10 @@ async def run_plugin_flow(bbs, plugin, session) -> bool:
             return session.is_active
         if text:
             try:
-                stay = bool(plugin.handle_command(session, text))
+                result = plugin.handle_command(session, text)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                stay = bool(result)
             except Exception:  # noqa: BLE001
                 logger.exception("plugin %s handle_command failed", plugin.name)
                 stay = False

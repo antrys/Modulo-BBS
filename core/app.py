@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.events import EventBus
+from core.storage import PluginStorage
 from core.user import UserManager
 from server.session import Session, SessionManager, SessionState
 
@@ -32,6 +33,9 @@ class BBSApp:
         # Server configuration (loaded from config.yaml by run_server.py).
         # Plugins read it via ``bbs.config`` (e.g. logon_sequence).
         self.config: dict = dict(config) if config else {}
+        # Per-plugin data directories: bbs.storage.dir("messageboard") ->
+        # plugins/messageboard/data/ (created on demand).
+        self.storage = PluginStorage()
         # Reference to the running transport server (telnet/SSH). Set when
         # the server is constructed so ``send`` can reuse its transport logic.
         self.server: Any = None

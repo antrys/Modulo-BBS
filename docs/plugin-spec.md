@@ -11,7 +11,7 @@ Modulo BBS uses a plugin-based architecture. Every feature (message boards, file
 1. **Core is minimal** — session management, user model, event bus, transport
 2. **Plugins are replaceable** — swap the menu system, auth flow, or message board without touching core
 3. **Events are the nervous system** — core fires lifecycle events, plugins listen and react
-4. **Storage is convention-based** — `data/<plugin_name>/` for each plugin, do whatever inside
+4. **Storage is convention-based** — `plugins/<name>/data/` for each plugin, do whatever inside
 5. **Everything references the User model** — plugins don't re-invent user data
 
 ## Architecture Layers
@@ -28,7 +28,7 @@ Modulo BBS uses a plugin-based architecture. Every feature (message boards, file
 │  Auth │ Menu │ MessageBoard │ Files │ Chat │ .. │
 ├─────────────────────────────────────────────────┤
 │                  Storage                         │
-│          data/<plugin_name>/                     │
+│  users/ (core) │ plugins/<name>/data/ (plugins) │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -81,7 +81,9 @@ class User:
 - `user.has_flag("mod")` → bool
 - `user.has_permission("messageboard:delete")` → bool
 
-**Core owns:** `data/users/` directory
+**Core owns:** the `users/` directory at the project root (one JSON file per
+account). Core-owned data lives *outside* `plugins/` so a plugin can be
+removed without ever touching accounts.
 
 ### Auth System (Dual-Layer)
 
@@ -272,44 +274,73 @@ plugins/
 
 ### Plugin Storage
 
-Each plugin has a `data/` subdirectory for runtime data. The plugin decides what goes inside — JSON, SQLite, flat files, whatever.
+Each plugin owns the `data/` subdirectory inside its own package. The plugin
+decides what goes inside — JSON, SQLite, flat files, whatever.
 
 ```python
-# Get plugin's data directory
+# Get plugin's data directory (created on first access)
 plugin_dir = bbs.storage.dir("messageboard") → Path("plugins/messageboard/data/")
 
-# Simple key-value (optional convenience)
-bbs.storage.get("messageboard", "last_post_id") → int
-bbs.storage.set("messageboard", "last_post_id", 42)
+# Compose standard pathlib/json calls against it
+boards = plugin_dir / "boards.json"
 ```
 
-Plugins that need complex storage just use their `data/` directory directly. The API is optional — not required.
+There is no key-value convenience layer — plugins compose `pathlib` and
+`json` directly against their directory. Names passed to `storage.dir()` must
+match `[a-z0-9_-]+`; anything else raises `core.storage.StorageError`.
 
 ## Permission System
 
-### Flags
+### How Flags Become Permissions
 
-Users have flags that determine access level:
+There is no per-plugin permission configuration and no flag→permission map
+to maintain. Resolution is a single algorithm in core
+(`core/user.py`, `_required_level`): every flag has an access **level**, and
+every `namespace:action` string requires one of those levels. Plugins don't
+declare anything — they just choose action names whose level matches the
+intent.
 
-| Flag | Description |
-|------|-------------|
-| `sysop` | Full system access |
-| `admin` | User management, system config |
-| `mod` | Content moderation |
-| `user` | Standard access (default) |
-| `guest` | Read-only access |
+| Flag | Level |
+|------|-------|
+| `sysop` | 4 — everything |
+| `admin` | 3 — also all admin namespaces (`users:*`, `system:*`, `config:*`, `auth:*`) |
+| `mod` | 2 — also moderation actions in any namespace (delete, edit, moderate, warn, kick, ban, unban) |
+| `user` | 1 — standard actions (post, reply, upload, download, send, ...) |
+| `guest` | 0 — read-only actions (read, view, list, search) |
+
+A user's effective level is the **max** across their flags. A permission is
+granted when effective level ≥ required level.
+
+Resolution order for `namespace:action`:
+
+1. Action ends in `_own` (e.g. `messageboard:delete_own`) → requires `user`.
+   Self-service on your own content.
+2. Namespace is an admin namespace (`users`, `system`, `config`, `auth`) →
+   requires `admin`. Always admin, regardless of the action.
+3. Action is a moderation keyword → requires `mod`.
+4. Action is read-only (`read`, `view`, `list`, `search`) → allowed for
+   `guest`.
+5. Anything else → requires `user`.
+
+Unknown flags contribute nothing (level 0), so typos fail closed.
 
 ### Permissions
 
-Plugins define their own permissions:
+Plugins define their own permission strings by convention:
+`<plugin_name>:<action>`:
 
 ```python
 # In messageboard plugin
-"messageboard:read"      # Read posts
-"messageboard:post"      # Create posts
-"messageboard:delete"    # Delete any post (mod)
-"messageboard:delete_own" # Delete own posts (user)
+"messageboard:read"       # guest-level (read-only action)
+"messageboard:post"       # user-level (standard action)
+"messageboard:delete"     # mod-level ("delete" is a moderation keyword)
+"messageboard:delete_own" # user-level (self-service suffix)
 ```
+
+Pick the action word to get the level you mean: name a destructive action
+`delete`/`ban`/... and it's mod-only automatically; name it `remove_item`
+and it's ordinary-user. If you need a custom threshold, check the flag
+directly: `user.has_flag("sysop")`.
 
 ### Checking Permissions
 

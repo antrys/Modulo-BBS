@@ -115,6 +115,29 @@ class BBSSSHSession(asyncssh.SSHServerSession):
         # (SyncTERM sends bare \r on Enter).
         if self._reader is None:
             return
+
+        # Server-side echo: SSH clients (SyncTERM included) expect the remote
+        # end to echo typed characters, like a real tty line discipline.
+        # Printable characters echo as-is; DEL/Backspace erase in place;
+        # Enter echoes as CRLF. Control sequences (ESC ...) pass unechoed.
+        echo = bytearray()
+        i = 0
+        while i < len(data):
+            b = data[i:i + 1]
+            if b == b"\x7f" or b == b"\x08":          # DEL / Backspace
+                echo += b"\b \b"
+            elif b == b"\r":                          # Enter -> CRLF
+                echo += b"\r\n"
+            elif b == b"\x1b":                        # ESC: skip sequence
+                i += 2                                # skip ESC + first byte
+            elif b >= b" ":
+                echo += b
+            i += 1
+        if echo:
+            # data_received is a sync callback invoked by asyncssh; schedule
+            # the async send on the loop rather than awaiting it here.
+            asyncio.ensure_future(self._send(bytes(echo)))
+
         raw = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         self._reader.feed_data(raw)
 

@@ -116,7 +116,7 @@ class Plugin:
         """Called once at startup. Register event handlers, etc."""
         pass
     
-    def onUnload(self):
+    def on_unload(self):
         """Called when plugin is being removed."""
         pass
     
@@ -146,29 +146,34 @@ class Plugin:
 
 ### Plugin Storage
 
-Each plugin gets its own subdirectory under `data/`:
+Storage is split by ownership:
+
 ```
-data/
-├── users/              # User accounts
-├── messageboard/       # Message board data
-├── files/              # File transfers
-├── bulletins/          # System bulletins
-└── chat/               # Chat logs
+users/                        # Core-owned: one JSON file per account
+plugins/
+├── login/data/               # Plugin-owned: each plugin's runtime data
+├── messageboard/data/        #   (boards.json, posts/, ...)
+├── files/data/               #   (uploads/, ...)
+└── chat/data/                #   (chat logs, ...)
 ```
 
-Plugins use `bbs.storage.get(plugin_name, key)` and `bbs.storage.set(plugin_name, key, value)` for persistence. Storage backend is pluggable (default: JSON files, SQLite available).
+Plugins get their data directory via `bbs.storage.dir(plugin_name)` (a
+`Path`, created on demand) and compose standard `pathlib`/`json` calls
+against it. There is no pluggable backend — just files on disk.
 
 ## API Layer
 
 ### Internal Python API
 
 Plugins interact with the core via the `bbs` object:
-- `bbs.send(session, data)` — send bytes to a user
-- `bbs.broadcast(message)` — send to all connected users
-- `bbs.storage.get/set` — persistent storage
+- `bbs.send(session, text)` — send text to a user (async)
+- `bbs.send_raw(session, data)` — send raw bytes, e.g. telnet negotiation (async)
+- `bbs.disconnect(session)` — close a session cleanly (async)
+- `bbs.storage.dir(plugin_name)` — the plugin's data directory as a `Path`
 - `bbs.events.emit/on` — event bus
-- `bbs.users.get(username)` — user lookup
-- `bbs.sessions.active` — list of active sessions
+- `bbs.users.get/create/update/delete/list` — user accounts (all async)
+- `bbs.session_manager.active_sessions()` — list of active sessions
+- `bbs.config` — server configuration from config.yaml
 
 ### External HTTP API
 

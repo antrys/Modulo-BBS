@@ -26,31 +26,31 @@ class MyPlugin(Plugin):
     
     def on_load(self, bbs):
         self.bbs = bbs
-        # Register event handlers
-        bbs.events.on("user:login", self.on_user_login)
+        # Event handlers may be sync or async
+        bbs.events.on("user:login", self._on_user_login)
     
-    def on_session_start(self, session):
-        pass
+    def _on_user_login(self, data):
+        session = data["session"]
+        # ... react to logins
     
-    def on_session_end(self, session):
-        pass
-    
-    def handle_command(self, session, command):
+    async def handle_command(self, session, command):
         """Handle input while this plugin is active."""
         if command.strip().upper() == "QUIT":
             return False  # Return to main menu
-        self.bbs.send(session, f"You said: {command}\r\n")
+        await self.bbs.send(session, f"You said: {command}\r\n")
         return True  # Stay in plugin
 ```
 
-### 3. Enable the Plugin
+Any lifecycle hook (`on_load`, `handle_command`, ...) may be `def` or
+`async def` — the core awaits coroutines automatically. Use `async def`
+whenever you need to `await` something like `bbs.send()`.
 
-Add to `config.yaml`:
-```yaml
-plugins:
-  enabled:
-    - myplugin
-```
+### 3. Drop It In
+
+The loader discovers every package under `plugins/` that exports a `Plugin`
+subclass — there is no enable list to edit. Create the directory, and the
+plugin appears in the main menu after a restart. Remove the directory (or
+the subclass) to disable it.
 
 ### 4. Restart the Server
 
@@ -82,30 +82,31 @@ The plugin appears in the main menu automatically.
 Available after `on_load(bbs)`:
 
 ```python
-# Send data to a user
-bbs.send(session, "Hello!\r\n")
-bbs.send_bytes(session, b"\x1b[32mGreen text\x1b[0m\r\n")
+# Send data to a user (async -- await it)
+await bbs.send(session, "Hello!\r\n")
+await bbs.send_raw(session, b"\x1b[32mGreen text\x1b[0m\r\n")
 
-# Broadcast to all users
-bbs.broadcast("System message!\r\n")
+# Disconnect a user (core closes sockets -- never touch session.writer)
+await bbs.disconnect(session)
 
-# Persistent storage
-bbs.storage.get("myplugin", "key")        # Read
-bbs.storage.set("myplugin", "key", value)  # Write
-bbs.storage.list("myplugin")               # List keys
+# Persistent storage: your plugin's data directory (created on demand)
+plugin_dir = bbs.storage.dir("myplugin")   # Path("plugins/myplugin/data/")
 
-# Event bus
+# Event bus (handlers may be sync or async, one `data` dict argument)
 bbs.events.emit("my:event", {"data": 123})
-bbs.events.on("other:event", handler)
+bbs.events.on("other:event", self._handler)
 
-# User management
-user = bbs.users.get("dave")
-bbs.users.list()
-bbs.users.create(username, password, display_name)
+# User management (all async -- await them)
+user = await bbs.users.get("dave")          # None if missing
+users = await bbs.users.list()
+user = await bbs.users.create("dave", "password", display_name="Dave")
 
 # Active sessions
-bbs.sessions.active  # List of active Session objects
-bbs.sessions.count   # Number of active sessions
+sessions = bbs.session_manager.active_sessions()
+count = len(sessions)
+
+# Server configuration from config.yaml
+sequence = bbs.config.get("logon_sequence", [])
 ```
 
 ## Command Handling
@@ -119,7 +120,7 @@ bbs.sessions.count   # Number of active sessions
 ### Command Parsing
 
 ```python
-def handle_command(self, session, command):
+async def handle_command(self, session, command):
     parts = command.strip().split()
     if not parts:
         return True
@@ -136,36 +137,40 @@ def handle_command(self, session, command):
     elif cmd == "QUIT":
         return False
     else:
-        self.bbs.send(session, f"Unknown command: {cmd}\r\n")
+        await self.bbs.send(session, f"Unknown command: {cmd}\r\n")
     
     return True
 ```
 
 ## Storage API
 
-### Key-Value Storage
+### Your Data Directory
 
-Simple key-value pairs:
+Every plugin owns `plugins/<name>/data/`, handed to you as a `Path`
+(created on first access):
+
 ```python
-# Store a value
-bbs.storage.set("myplugin", "counter", 42)
-
-# Retrieve a value
-count = bbs.storage.get("myplugin", "counter", default=0)
-
-# List all keys
-keys = bbs.storage.list("myplugin")
-
-# Delete a key
-bbs.storage.delete("myplugin", "counter")
+plugin_dir = bbs.storage.dir("myplugin")   # Path("plugins/myplugin/data/")
 ```
 
-### Complex Data
+There is no key-value layer — compose standard `pathlib` and `json`.
 
-Store dicts/lists as JSON:
+### Simple Values
+
 ```python
 import json
 
+# Write
+(plugin_dir / "counter.json").write_text(json.dumps({"count": 42}))
+
+# Read
+data = json.loads((plugin_dir / "counter.json").read_text())
+count = data.get("count", 0)
+```
+
+### Structured Records
+
+```python
 post = {
     "id": 1,
     "author": "dave",
@@ -174,24 +179,15 @@ post = {
     "timestamp": "2026-08-21T12:00:00Z"
 }
 
-bbs.storage.set("messageboard", "post_1", post)
+(plugin_dir / "post_1.json").write_text(json.dumps(post))
 ```
 
-### File-Based Storage
+### Large or Binary Data
 
-For large data, use the filesystem directly:
-```python
-from pathlib import Path
-
-plugin_dir = Path("data/myplugin")
-plugin_dir.mkdir(exist_ok=True)
-
-# Write a file
-(plugin_dir / "config.json").write_text(json.dumps(config))
-
-# Read a file
-config = json.loads((plugin_dir / "config.json").read_text())
-```
+Just use files inside your directory — uploads, SQLite databases, whatever
+the plugin needs. Keep everything under your own `data/` so SysOp backups
+(`tar czf backup.tar.gz plugins/*/data/`) and clean plugin removal keep
+working.
 
 ## Event System
 
@@ -222,7 +218,9 @@ def on_load(self, bbs):
 
 def handle_login(self, event):
     username = event["user"].username
-    self.bbs.broadcast(f"{username} has logged in.\r\n")
+    # Broadcast = send to each active session (async)
+    for s in self.bbs.session_manager.active_sessions():
+        await self.bbs.send(s, f"{username} has logged in.\r\n")
 ```
 
 ### Event Naming Convention
@@ -295,15 +293,23 @@ def show_list(self, session, items, page=0, per_page=10):
 
 ### 1. Don't Block the Event Loop
 
-All I/O must be async:
+One blocked hook stalls every connected node. Use `async def` hooks, await
+the core's async APIs, and push CPU-heavy work to a worker thread:
+
 ```python
 # Good
-async def load_data(self):
-    data = await self.bbs.storage.async_get("key")
+async def handle_command(self, session, command):
+    data = await self.bbs.users.get(command.strip())
+    await self.bbs.send(session, f"Hello, {data.shown_name()}!\r\n")
+    return True
 
-# Bad — blocks all other sessions
+# CPU-heavy work (bcrypt, big parsing) -- off the event loop
+async def rehash(self, password):
+    return await asyncio.to_thread(self._expensive_hash, password)
+
+# Bad — blocks every node while it runs
 def load_data(self):
-    data = open("file.txt").read()
+    data = open("huge_file.txt").read()   # synchronous disk I/O
 ```
 
 ### 2. Clean Up on Unload

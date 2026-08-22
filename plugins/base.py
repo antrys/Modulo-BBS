@@ -34,13 +34,30 @@ Lifecycle
 
     All lifecycle hooks are optional — the defaults are safe no-ops, so a
     plugin only overrides the ones it needs.
+
+Async/Sync
+    Every hook may be written as either ``def`` or ``async def``. The core
+    awaits any coroutine a hook returns (the "await-if-coroutine" rule) at
+    every call site: plugin loading, session start/end, the command loop,
+    and event-bus handlers. Write ``async def`` when you need to ``await``
+    something (bbs.send, bbs.users.*, storage I/O); write plain ``def``
+    otherwise. Never block inside a hook (no time.sleep, no synchronous
+    disk/network I/O beyond trivial file reads) — that stalls every node,
+    not just yours. CPU-heavy work (bcrypt, large parsing) must go through
+    ``asyncio.to_thread``.
 """
 
-from typing import Any
+from typing import Any, Awaitable
 
 
 class Plugin:
-    """Base class for all Modulo BBS plugins."""
+    """Base class for all Modulo BBS plugins.
+
+    Every hook below may be overridden as ``def`` or ``async def``; core
+    awaits coroutines at every call site ("await-if-coroutine"). The
+    annotations express that: e.g. ``handle_command`` returns ``bool`` or
+    an awaitable resolving to ``bool``.
+    """
 
     # Metadata (subclasses must set name and version)
     name: str = ""             # Unique identifier ("messageboard")
@@ -50,33 +67,40 @@ class Plugin:
     menu_key: str = ""         # Hotkey ("M")
     menu_order: int = 100      # Sort order in main menu (lower = higher)
 
-    def on_load(self, bbs: Any) -> None:
+    def on_load(self, bbs: Any) -> "None | Awaitable[None]":
         """Called once at startup. Register event handlers and resources.
+
+        May be defined as sync or async.
 
         Args:
             bbs: The core BBS server object (event bus, storage, etc.).
         """
 
-    def on_unload(self) -> None:
+    def on_unload(self) -> "None | Awaitable[None]":
         """Called when the plugin is being removed or the server shuts down.
         Release any resources the plugin acquired during :meth:`on_load`."""
 
-    def on_session_start(self, session: Any) -> None:
+    def on_session_start(self, session: Any) -> "None | Awaitable[Any]":
         """Called when a user connects / enters this plugin.
 
         Args:
             session: The active BBS session.
         """
 
-    def on_session_end(self, session: Any) -> None:
+    def on_session_end(self, session: Any) -> "None | Awaitable[None]":
         """Called when a user disconnects / leaves this plugin.
 
         Args:
             session: The session that is ending.
         """
 
-    def handle_command(self, session: Any, command: str) -> bool:
+    def handle_command(
+        self, session: Any, command: str
+    ) -> "bool | Awaitable[bool]":
         """Handle a command while this plugin is active.
+
+        May be defined as sync or async; return (or resolve to) True to
+        stay in the plugin, False to return to the menu.
 
         Args:
             session: The active BBS session.

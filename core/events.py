@@ -19,21 +19,23 @@ Usage::
     # Optionally await handler completion.
     await asyncio.gather(*bus.emit("user:login", data))
 
-Handlers must be async callables. The ``data`` dict is passed as their single
-argument. An exception raised inside a handler is logged and isolated: it never
-propagates to the emitter and never prevents other handlers from running.
+Handlers may be sync or async callables; sync handlers run to completion
+inside their scheduled task, async ones are awaited. The ``data`` dict is
+passed as their single argument. An exception raised inside a handler is
+logged and isolated: it never propagates to the emitter and never prevents
+other handlers from running.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 logger = logging.getLogger("modulo.core.events")
 
-# Any awaitable, one-arg callable. Handlers take ``data`` as their argument.
-Handler = Callable[[dict[str, Any]], Awaitable[None]]
+# One-arg callable; sync or async. Handlers take ``data`` as their argument.
+Handler = Callable[[dict[str, Any]], Any]
 Data = dict[str, Any]
 
 # Core lifecycle events -- always fired by the core, can't be suppressed.
@@ -135,8 +137,14 @@ class EventBus:
 
 
 async def _invoke(handler: Handler, event: str, data: Data) -> None:
-    """Await a single handler, isolating and logging any exception."""
+    """Await a single handler, isolating and logging any exception.
+
+    Sync handlers are called directly; async ones (or any callable returning
+    an awaitable) are awaited. Either style is accepted.
+    """
     try:
-        await handler(data)
+        result = handler(data)
+        if asyncio.iscoroutine(result):
+            await result
     except Exception:  # noqa: BLE001 -- a plugin bug must not bring down the bus
         logger.exception("event %r handler %r raised an error", event, handler)

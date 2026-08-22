@@ -142,9 +142,10 @@ def test_ssh_shows_banner_before_login(tmp_path):
 def test_ssh_registration_via_login_screen(tmp_path):
     app = _make_app(tmp_path)
 
-    # From the SSH login screen, press R, fill the registration form.
+    # From the SSH login screen, press R, fill the registration form,
+    # decline the optional TOTP enrolment prompt, then quit from the menu.
     sess, chan = run(_run_session(app, [
-        "R", "carol", "pw456", "pw456", "Q",
+        "R", "carol", "pw456", "pw456", "N", "Q",
     ]))
 
     assert sess._session is None

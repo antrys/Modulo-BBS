@@ -66,7 +66,7 @@ class BBSServer:
         logger.info(f"Max nodes: {self.max_nodes}")
         mode = " (plain text)" if self.plain_text else ""
         print(f"\n{'='*60}")
-        print(f"  NETRUNNER BBS Server v0.1{mode}")
+        print(f"  MODULO BBS Server v0.1{mode}")
         print(f"  Listening on {addrs}")
         print(f"  Max nodes: {self.max_nodes}")
         print(f"{'='*60}\n")

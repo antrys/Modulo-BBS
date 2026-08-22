@@ -197,7 +197,7 @@ async def connection_test(host: str = "127.0.0.1", port: int = 6400):
     # Test 2: Receive banner
     print("\nTest 2: Receive banner...")
     output = await client.receive_output(timeout=3.0)
-    if output and ("NETRUNNER" in output or "BBS" in output or "Welcome" in output or "Login" in output):
+    if output and ("MODULO" in output or "BBS" in output or "Welcome" in output or "Login" in output):
         print("  PASS: Banner received")
         # Show first few lines
         lines = output.strip().split('\n')

@@ -23,9 +23,8 @@ logger = logging.getLogger("modulo.core.loader")
 class PluginLoader:
     """Find and load Modulo BBS plugins from a ``plugins/`` directory.
 
-    ``on_load`` is normally synchronous per the plugin contract, but the
-    loader also awaits the return value when a plugin returns a coroutine,
-    keeping the loader forgiving of async hooks.
+    ``on_load`` may be sync or async; the loader awaits any coroutine it
+    returns, per the await-if-coroutine rule in ``plugins.base``.
     """
 
     def __init__(self, plugins_dir=None):
@@ -76,8 +75,8 @@ class PluginLoader:
 
         try:
             plugin = cls()
-            # on_load is sync per the contract, but an async plugin (e.g. the
-            # login plugin) may return a coroutine -- await it when present.
+            # on_load may be sync or async (await-if-coroutine rule,
+            # see plugins.base) -- await it when it returns a coroutine.
             result: Any = plugin.on_load(bbs)
             if asyncio.iscoroutine(result):
                 await result
