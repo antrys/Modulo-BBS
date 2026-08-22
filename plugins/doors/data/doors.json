@@ -1,0 +1,4 @@
+[
+  {"id": "tradewars", "name": "TradeWars 2002", "requires": []},
+  {"id": "lord", "name": "Legend of the Red Dragon", "requires": ["user"]}
+]

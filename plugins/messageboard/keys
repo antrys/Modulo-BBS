@@ -1,0 +1,6 @@
+# Messageboard keybindings (KEY, NAME). Omit a line to disable that command.
+L, LIST
+P, POST
+R, REPLY
+D, DELETE
+Q, QUIT

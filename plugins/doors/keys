@@ -1,0 +1,3 @@
+# Doors keybindings (KEY, DOOR-ID). Omit a line to disable/hide that door.
+T, tradewars
+L, lord
