@@ -51,17 +51,16 @@ class RegistrationFlow:
                     f"{ANSI.RESET}\r\n"
                 )
                 continue
-            display_name = (await tty.read_line("Display name [optional]: ")).strip()
-            location = (await tty.read_line("Location [optional]: ")).strip()
-            email = (await tty.read_line("Email [optional]: ")).strip()
+
+            # That's the whole form. Display name, location, email etc. are
+            # set later via user preferences -- registration stays friction-
+            # free. (A sysop who wants an interrogation can write their own
+            # login plugin.)
 
             try:
                 user = await self.bbs.users.create(
                     username=username,
                     password=password,
-                    display_name=display_name or None,
-                    email=email or None,
-                    location=location or None,
                 )
             except UserExistsError:
                 await tty.send(

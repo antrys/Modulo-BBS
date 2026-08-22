@@ -144,12 +144,12 @@ def test_ssh_registration_via_login_screen(tmp_path):
 
     # From the SSH login screen, press R, fill the registration form.
     sess, chan = run(_run_session(app, [
-        "R", "carol", "pw456", "pw456", "Carol", "Neptune", "c@x.io", "n", "Q",
+        "R", "carol", "pw456", "pw456", "Q",
     ]))
 
     assert sess._session is None
     text = chan.text
-    assert "Account created. Welcome, Carol!" in text   # login plugin's screen
+    assert "Account created. Welcome, carol!" in text   # falls back to username
     assert "Main Menu" in text
     # The account was actually persisted by the login plugin.
     assert run(app.users.get("carol")) is not None
