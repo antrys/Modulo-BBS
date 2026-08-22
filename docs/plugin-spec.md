@@ -363,16 +363,19 @@ storage:
 ## Logon Sequence (Sysop-Configurable)
 
 The order of what a caller sees — splash screens, login, bulletins, menu — is
-data, not code. Core owns the **sequence runner**; everything in the sequence
-is pluggable. There is no `built-in` step type.
+data, not code. And the sequencer itself is **just another plugin**: it reads
+`logon_sequence` from config and executes steps. Everything in the sequence is
+pluggable; there is no `built-in` step type.
 
 ```yaml
-logon_sequence:
-  - screen:splash.txt        # sysop splash (MODULO blockletters lives here)
-  - plugin:login             # auth + optional TOTP
-  - screen:welcome.txt       # welcome mat
-  - plugin:bulletins         # new-since-last-call (skips itself if nothing new)
-  - plugin:mainmenu          # the menu is just another plugin
+logon_plugin: logon            # which plugin orchestrates the logon flow
+
+logon_sequence:                # read by the logon plugin
+  - screen:splash.txt          # sysop splash (MODULO blockletters lives here)
+  - plugin:login               # auth + optional TOTP
+  - screen:welcome.txt         # welcome mat
+  - plugin:bulletins           # new-since-last-call (skips itself if nothing new)
+  - plugin:mainmenu            # the menu is just another plugin
 ```
 
 ### Step types
@@ -385,15 +388,27 @@ logon_sequence:
 Sysops reorder, remove, or duplicate steps freely. Two splash screens before
 login? Add two `screen:` lines. Don't want bulletins? Delete the line.
 
-### Why core owns the runner
+### Why the sequencer is a plugin
 
-1. **State machine lives in core.** The sequence is where the session
-   transitions from CONNECTED → AUTHENTICATED → IN_MENU; core must gate on it.
-2. **Observability.** Each step emits `logon:step {session, step, result}` so
-   instrumentation sees the whole flow even when sysops reorder it.
-3. **Transport consistency.** Telnet and SSH run the same sequence through one
-   code path — no per-transport hardcoded flows (and one renderer kills the
-   screen-width wrapping class of bugs).
+Consistency: the runner is pure orchestration — read a list, call each thing,
+emit events. It needs no special privileges, so it gets none. The payoff is
+that the *entire* logon experience is swappable: a sysop can point
+`logon_plugin:` at any orchestrator — a wizard-style onboarding, straight-to-
+chat, kiosk mode — without touching core.
+
+### What stays in core (and why)
+
+1. **The bootstrap hook.** Something must run first. After transport
+   handshake, core invokes the plugin named by `logon_plugin:` — one identical
+   line per transport. This avoids infinite regress (who runs the runner?)
+2. **Graceful failure.** Missing or broken logon plugin → core displays a
+   minimal "system unavailable" notice and closes cleanly. Never hangs.
+3. **Non-suppressible primitives.** `bbs.disconnect(session)`,
+   `session:connect`, `session:disconnect` are core-owned. Plugins (including
+   the sequencer) cannot close sockets or hide connection/disconnection from
+   instrumentation. Step-level `logon:step` events are emitted by the
+   sequencer — worst case a broken sequencer loses step granularity, never the
+   whole audit trail.
 
 ### Main menu is a plugin
 
@@ -414,7 +429,7 @@ directly, so a buggy plugin can always be cleaned up reliably by core.
 2. Event bus ✓
 3. User model + storage ✓
 4. Login plugin ✓
-5. Logon sequence runner (core) + config-driven step list
+5. Logon sequencer plugin + core bootstrap hook (`logon_plugin:` config)
 6. Mainmenu plugin (extract from server.py)
 7. Message board plugin
 8. File transfer plugin
