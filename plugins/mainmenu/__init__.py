@@ -102,7 +102,10 @@ class MainmenuPlugin(Plugin):
         lines = [C + B + bar + R, C + B + "  Main Menu" + R, C + B + bar + R, ""]
         for plugin in self._menuable():
             label = getattr(plugin, "menu_label", "") or plugin.name
-            lines.append(C + f"  [{plugin.menu_key.upper()}] {label}" + R)
+            if label.startswith("["):
+                lines.append(C + f"  {label}" + R)
+            else:
+                lines.append(C + f"  [{plugin.menu_key.upper()}] {label}" + R)
         lines.append(C + "  [I] System Info" + R)
         lines.append(C + "  [Q] Disconnect" + R)
         lines.append("")
