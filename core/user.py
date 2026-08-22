@@ -147,6 +147,7 @@ class User:
     created: datetime = field(default_factory=_now)
     last_login: datetime | None = field(default=None)
     flags: list[str] = field(default_factory=lambda: ["user"])
+    groups: list[str] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
     preferences: dict = field(default_factory=dict)
 
@@ -155,6 +156,36 @@ class User:
     def shown_name(self) -> str:
         """Name to display to other users: display_name if set, else username."""
         return self.display_name.strip() or self.username
+
+    def in_group(self, *groups: str) -> bool:
+        """True if the user belongs to any of the named groups.
+
+        Groups are plain labels (no hierarchy, no levels) used for
+        limited-access areas. Staff flags (mod+) bypass group checks at
+        the access-rule level, not here -- this method is a pure
+        membership test.
+        """
+        user_groups = {g.lower() for g in (self.groups or [])}
+        return any(g.lower() in user_groups for g in groups)
+
+    def can_access(self, requires: list[str] | None) -> bool:
+        """True if the user may enter an area requiring ``requires`` groups.
+
+        The area-access rule (see plugin-spec.md, "Groups"):
+          * ``requires`` empty/None -> public area, everyone enters.
+          * staff flags (mod and above) -> always enter.
+          * otherwise -> grant when the user's groups intersect the
+            required set.
+
+        Plugins pass their resource's requirement list; they never
+        implement the intersection logic themselves.
+        """
+        reqs = [r for r in (requires or []) if r]
+        if not reqs:
+            return True
+        if _user_level(self.flags) >= _FLAG_LEVEL["mod"]:
+            return True
+        return self.in_group(*reqs)
 
     def has_flag(self, flag: str) -> bool:
         """True if the user holds the given flag (e.g. ``"mod"``)."""
@@ -206,6 +237,7 @@ class User:
             "created": self.created.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
             "flags": list(self.flags),
+            "groups": list(self.groups),
             "stats": dict(self.stats),
             "preferences": dict(self.preferences),
         }
@@ -229,6 +261,7 @@ class User:
                 if data.get("last_login") else None
             ),
             flags=list(data.get("flags", ["user"])),
+            groups=[str(g).lower() for g in data.get("groups", [])],
             stats=dict(data.get("stats", {})),
             preferences=dict(data.get("preferences", {})),
         )
@@ -252,7 +285,7 @@ class UserManager:
     # Fields that may be modified via update(); anything else is rejected.
     _UPDATABLE = {
         "display_name", "email", "location", "password", "password_hash",
-        "flags", "stats", "preferences", "last_login",
+        "flags", "groups", "stats", "preferences", "last_login",
     }
 
     def __init__(self, users_dir: str | Path | None = None):
@@ -333,6 +366,7 @@ class UserManager:
         email: str | None = None,
         flags: list[str] | None = None,
         location: str | None = None,
+        groups: list[str] | None = None,
     ) -> User:
         """Create and persist a new user account.
 
@@ -358,6 +392,7 @@ class UserManager:
             email=email or "",
             location=location,
             flags=list(flags) if flags is not None else ["user"],
+            groups=[str(g).lower() for g in (groups or [])],
         )
 
         async with self._lock:
@@ -413,6 +448,8 @@ class UserManager:
                 user.email = fields["email"]
             if "flags" in fields:
                 user.flags = list(fields["flags"])
+            if "groups" in fields:
+                user.groups = [str(g).lower() for g in (fields["groups"] or [])]
             if "stats" in fields:
                 user.stats = fields["stats"]
             if "preferences" in fields:

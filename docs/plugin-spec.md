@@ -352,6 +352,48 @@ else:
     bbs.send(session, "Permission denied.\r\n")
 ```
 
+### Groups (Limited-Access Areas)
+
+Flags answer "what can this user *do*?" Groups answer "where can this user
+*go*?" — the limited-access portions of the board. This is deliberately not
+the legacy numeric-levels-per-area system: membership in a club is not a rank,
+and rank is already covered by flags.
+
+**The model:**
+
+* `User.groups: list[str]` — plain lowercase labels. No hierarchy, no levels,
+  nothing inherited. Default `[]`. Managed by sysop command (`/group add
+  <user> <group>`), never self-service by default.
+* An area (sub-board, file area, chat room) carries a `requires` list of group
+  names. Empty list = public.
+* **One rule**, implemented once in core as `User.can_access(requires)`:
+
+| Condition | Result |
+|-----------|--------|
+| `requires` empty or None | everyone enters (public) |
+| user holds `mod` or above | always enters (staff see everything) |
+| user's groups intersect `requires` | enters (**any-of**, not all-of) |
+| otherwise | denied |
+
+```python
+# In a plugin, gating an area:
+if session.user.can_access(area.requires):
+    await show_area(session, area)
+else:
+    await bbs.send(session, "\r\nAccess denied.\r\n")
+```
+
+**Design notes:**
+
+* Any-of semantics: requiring `["traders", "veterans"]` admits a member of
+  either group. All-of semantics would be a different, rarely-wanted feature —
+  don't add it until a real board needs it.
+* Case-insensitive everywhere; stored lowercase. Typos in a group name fail
+  closed (a required group nobody belongs to is just an empty room).
+* Groups are orthogonal to flags: a `mod` with no groups still sees every
+  area; a `guest` in `["veterans"]` still can't post.
+* Legacy users without a `groups` key in their JSON load cleanly (`[]`).
+
 ## HTTP API (Future)
 
 REST + WebSocket API for web frontends, mobile apps, CLI tools.

@@ -353,3 +353,72 @@ def test_corrupt_file_raises_on_get(manager):
             await manager.get("broken")
 
     run(_test())
+
+# ---------------------------------------------------------------------------
+# Groups / area access
+# ---------------------------------------------------------------------------
+
+def test_groups_membership_and_access():
+    u = User(username="dave", display_name="", password_hash="x",
+             groups=["Veterans", "linux-users"])
+
+    # membership is case-insensitive
+    assert u.in_group("veterans")
+    assert u.in_group("LINUX-USERS")
+    assert not u.in_group("mods-only")
+
+    # can_access: empty requirement = public
+    assert u.can_access(None)
+    assert u.can_access([])
+
+    # intersection grants
+    assert u.can_access(["veterans"])
+    assert u.can_access(["something-else", "Linux-Users"])  # any-of, not all-of
+    assert not u.can_access(["secret-club"])
+
+
+def test_staff_bypasses_group_requirements():
+    mod = User(username="m", display_name="", password_hash="x", flags=["mod"],
+               groups=[])
+    sysop = User(username="s", display_name="", password_hash="x", flags=["sysop"])
+    plain = User(username="p", display_name="", password_hash="x")
+
+    for staff in (mod, sysop):
+        assert staff.can_access(["secret-club"])   # staff sees everything
+    assert not plain.can_access(["secret-club"])   # non-member denied
+    assert plain.can_access([])                    # but public areas fine
+
+
+def test_groups_persist_roundtrip(tmp_path):
+    manager = UserManager(users_dir=tmp_path / "users")
+
+    async def _test():
+        await manager.create("alice", "pw", groups=["veterans"])
+        fetched = await manager.get("alice")
+        assert fetched.groups == ["veterans"]
+        # update() accepts the groups field
+        updated = await manager.update("alice", groups=["Vets", "traders"])
+        assert updated.groups == ["vets", "traders"]   # normalised to lowercase
+
+    run(_test())
+
+
+def test_legacy_user_file_without_groups_loads(tmp_path):
+    # A users/dave.json written before groups existed must still load.
+    users_dir = tmp_path / "users"
+    users_dir.mkdir(parents=True)
+    legacy = {
+        "username": "dave", "display_name": "Dave",
+        "password_hash": "$2b$12$x" * 4, "email": "",
+        "created": "2026-01-01T00:00:00+00:00", "last_login": None,
+        "flags": ["user"], "stats": {}, "preferences": {},
+    }
+    (users_dir / "dave.json").write_text(json.dumps(legacy), encoding="utf-8")
+    manager = UserManager(users_dir=users_dir)
+
+    async def _test():
+        u = await manager.get("dave")
+        assert u is not None
+        assert u.groups == []          # defaults to empty, loads cleanly
+
+    run(_test())
