@@ -1,0 +1,4 @@
+# Bulletins keybindings (KEY, NAME). Omit to disable.
+N, NEXT
+P, PREVIOUS
+Q, QUIT
