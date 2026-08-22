@@ -27,4 +27,5 @@ logon_sequence:
   - screen:splash.txt
   - plugin:login
   - screen:welcome.txt
+  - plugin:bulletins
   - plugin:mainmenu
