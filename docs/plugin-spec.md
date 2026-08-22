@@ -378,6 +378,28 @@ logon_sequence:                # read by the logon plugin
   - plugin:mainmenu            # the menu is just another plugin
 ```
 
+### Core-plugins
+
+**Core-plugins** are the plugins Modulo ships with that the board needs to
+operate: `login`, `logon` (sequencer), and `mainmenu`. They are ordinary
+plugins — same base class, same directory layout, same rules, replaceable like
+any other plugin — but a board without them has no authentication and no menu,
+so they ship enabled by default.
+
+The distinction is about packaging and support, not privilege:
+
+| | core-plugins | third-party plugins |
+|---|---|---|
+| Shipped with Modulo | yes | no |
+| Enabled by default | yes | sysop's choice |
+| Tested with each release | yes | author's responsibility |
+| Replaceable | yes (same mechanism) | yes |
+
+A sysop who swaps out or misconfigures a core-plugin owns the result — same as
+deleting `/bin/sh` on Linux. The system won't stop you; it also won't pretend
+the outcome is supported. If a required core-plugin fails to load at startup,
+core logs it loudly and refuses to serve sessions rather than half-working.
+
 ### Step types
 
 | Step | What it does |
