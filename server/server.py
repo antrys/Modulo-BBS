@@ -1,6 +1,14 @@
 """
 Main BBS Telnet Server.
 Async multi-node server with telnet protocol handling.
+
+The server owns the transport and the protocol negotiation. Everything a
+caller sees after the handshake -- splash, login, welcome, menu -- is owned
+by plugins: after handshake the server invokes the core bootstrap hook
+(:func:`core.runner.run_bootstrap`), which hands the session to the plugin
+named by config key ``logon_plugin`` (the ``logon`` sequencer by default).
+If that plugin is missing or broken, the hook sends a minimal notice and
+closes cleanly -- it never hangs.
 """
 
 import asyncio
@@ -14,9 +22,8 @@ from pathlib import Path
 # Add parent dir to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.telnet_protocol import TelnetNegotiator, ANSI
+from shared.telnet_protocol import TelnetNegotiator
 from server.session import Session, SessionState
-from tools.blockletters import render as block_render
 
 logger = logging.getLogger("bbs.server")
 
@@ -24,9 +31,9 @@ logger = logging.getLogger("bbs.server")
 class BBSServer:
     """Async telnet BBS server.
 
-    The server owns the transport and the core MODULO banner. Authentication
-    and post-login features are supplied by plugins loaded onto the shared
-    ``bbs`` application object (see :class:`core.app.BBSApp`).
+    The server owns the transport; authentication and post-login features
+    are supplied by plugins loaded onto the shared ``bbs`` application object
+    (see :class:`core.app.BBSApp`) and orchestrated by the logon sequencer.
     """
 
     def __init__(self, bbs=None, host: str = "127.0.0.1", port: int = 6400,
@@ -105,6 +112,7 @@ class BBSServer:
         )
 
         negotiator = TelnetNegotiator()
+        session.negotiator = negotiator
 
         try:
             if self.session_manager.active_count > self.max_nodes:
@@ -117,8 +125,13 @@ class BBSServer:
             session.state = SessionState.NEGOTIATING
             await self._send_raw(session, negotiator.initial_negotiation())
 
-            session.state = SessionState.LOGIN
-            await self._login_flow(session, negotiator)
+            session.state = SessionState.CONNECTED
+            # Core bootstrap hook: invoke the configured logon_plugin (the
+            # ``logon`` sequencer by default), which runs the whole logon
+            # sequence. On a missing/broken logon plugin this sends a
+            # "System unavailable." notice and closes cleanly -- never hangs.
+            from core.runner import run_bootstrap
+            await run_bootstrap(self.bbs, session)
 
         except (ConnectionResetError, BrokenPipeError, asyncio.IncompleteReadError):
             logger.info(f"Connection lost: {session_id}")
@@ -141,220 +154,6 @@ class BBSServer:
             except Exception:
                 pass
             logger.info(f"Session {session_id} closed")
-
-    async def _login_flow(self, session: Session, negotiator: TelnetNegotiator):
-        """Handle authentication by delegating to the login plugin.
-
-        The MODULO banner is core (kept here): it is shown before the login
-        plugin takes over the entire interactive auth experience. Once the
-        user authenticates, control passes to the (plugin-aware) main menu.
-        """
-        # Send clear screen then banner
-        await self._send(session, "\033[2J\033[1;1H")
-        await self._send(session, self._get_banner(session))
-        session.state = SessionState.LOGIN
-
-        plugin = self._find_login_plugin()
-        if plugin is None:
-            logger.error("No 'login' plugin loaded; cannot authenticate.")
-            return
-
-        authenticated = False
-        try:
-            result = plugin.on_session_start(session)
-            if asyncio.iscoroutine(result):
-                authenticated = bool(await result)
-            else:
-                authenticated = bool(result)
-        except Exception:
-            logger.exception("Login plugin on_session_start failed")
-
-        if authenticated and session.is_active:
-            session.state = SessionState.MAIN_MENU
-            await self._main_menu(session, negotiator)
-
-    # -- banner / menu rendering ------------------------------------------
-
-    def _get_banner(self, session: Session) -> str:
-        """Generate the core MODULO banner. Returns string with \r\n endings."""
-        w = min(session.terminal_width, 60)
-        bar = "=" * w
-
-        # Block letters using tools/blockletters.py - safe CP437 chars only
-        art_text = block_render("MODULO", size="small", fill="#", blank=" ")
-        art_lines = art_text.split("\n")
-
-        # ANSI color shortcuts
-        C = ANSI.BRIGHT_CYAN
-        B = ANSI.BOLD
-        G = ANSI.BRIGHT_GREEN
-        W = ANSI.BRIGHT_WHITE
-        D = ANSI.BRIGHT_BLACK
-        R = ANSI.RESET
-
-        # Build lines with \r\n endings, ANSI color applied per line
-        lines = []
-        lines.append(C + B + bar + R)
-        for art in art_lines:
-            lines.append(C + B + art + R)
-        lines.append(C + B + bar + R)
-        lines.append("")
-        lines.append(D + f"  Node {session.node_id} | {session.terminal_type} ({session.terminal_width}x{session.terminal_height})" + R)
-        lines.append("")
-        lines.append(W + "  Welcome to Modulo BBS" + R)
-        lines.append(D + "  A retro bulletin board system with a modern twist." + R)
-        lines.append(D + "  Version 0.1-alpha | Python " + sys.version.split()[0] + R)
-        lines.append("")
-        lines.append(G + f"  Active nodes: {self.session_manager.active_count}/{self.max_nodes}" + R)
-        lines.append("")
-
-        # Join with \r\n for proper terminal display
-        return "\r\n".join(lines)
-
-    def _get_main_menu(self, session: Session) -> str:
-        """Render the post-login main menu: plugin options + built-ins."""
-        w = min(session.terminal_width, 60)
-        bar = "=" * w
-        C = ANSI.BRIGHT_CYAN
-        B = ANSI.BOLD
-        W = ANSI.BRIGHT_WHITE
-        R = ANSI.RESET
-
-        lines = [C + B + bar + R, C + B + "  Main Menu" + R, C + B + bar + R, ""]
-        for plugin in self._menuable_plugins():
-            label = getattr(plugin, "menu_label", "") or plugin.name
-            lines.append(C + f"  [{plugin.menu_key.upper()}] {label}" + R)
-        lines.append(C + "  [3] System Info" + R)
-        lines.append(C + "  [Q] Disconnect" + R)
-        lines.append("")
-        lines.append(W + "  Select: " + R)
-        return "\r\n".join(lines)
-
-    # -- plugin helpers ----------------------------------------------------
-
-    def _find_login_plugin(self):
-        """Return the plugin whose ``name`` is ``"login"``, or None."""
-        for p in self.bbs.plugins:
-            if getattr(p, "name", None) == "login":
-                return p
-        return None
-
-    def _menuable_plugins(self):
-        """Plugins that appear as hotkey-selectable main-menu items."""
-        items = [p for p in self.bbs.plugins if getattr(p, "menu_key", "")]
-        items.sort(key=lambda p: (getattr(p, "menu_order", 100), p.menu_key.upper()))
-        return items
-
-    async def _run_plugin(self, plugin, session: Session,
-                          negotiator: TelnetNegotiator):
-        """Enter a menu plugin: run its session-start hook, then its command
-        loop until ``handle_command`` returns False (returns to the menu)."""
-        try:
-            result = plugin.on_session_start(session)
-            if asyncio.iscoroutine(result):
-                await result
-        except Exception:
-            logger.exception("plugin %s on_session_start failed", plugin.name)
-
-        while session.is_active:
-            try:
-                data = await asyncio.wait_for(
-                    session.reader.read(1024),
-                    timeout=300
-                )
-            except asyncio.TimeoutError:
-                await self._send(session, "\r\n\r\n[Idle timeout. Goodbye!]\r\n")
-                break
-
-            if not data:
-                break
-
-            session.touch()
-            session.bytes_received += len(data)
-
-            clean_data, responses = negotiator.process_data(data)
-            if responses:
-                for resp in responses:
-                    await self._send_raw(session, resp)
-
-            if clean_data:
-                text = clean_data.decode('latin-1', errors='replace')
-                try:
-                    stay = bool(plugin.handle_command(session, text))
-                except Exception:
-                    logger.exception("plugin %s handle_command failed", plugin.name)
-                    stay = False
-                if not stay:
-                    break
-
-    async def _main_menu(self, session: Session, negotiator: TelnetNegotiator):
-        """Main menu loop: plugin options plus built-in System Info/Disconnect."""
-        await self._send(session, self._get_main_menu(session))
-        while session.is_active:
-            try:
-                data = await asyncio.wait_for(
-                    session.reader.read(1024),
-                    timeout=300
-                )
-            except asyncio.TimeoutError:
-                await self._send(session, "\r\n\r\n[Idle timeout. Goodbye!]\r\n")
-                break
-
-            if not data:
-                break
-
-            session.touch()
-            session.bytes_received += len(data)
-
-            clean_data, responses = negotiator.process_data(data)
-
-            if responses:
-                for resp in responses:
-                    await self._send_raw(session, resp)
-
-            session.terminal_width, session.terminal_height = negotiator.window_size
-            session.terminal_type = negotiator.terminal_type
-
-            if clean_data:
-                text = clean_data.decode('latin-1', errors='replace')
-                await self._handle_input(session, text, negotiator)
-
-    async def _handle_input(self, session: Session, text: str,
-                             negotiator: TelnetNegotiator):
-        """Process user input at the main menu: plugins then built-ins."""
-        choice = text.strip().upper()
-
-        if choice in ("Q", "QUIT", "EXIT", "OFF", "BYE"):
-            await self._send(session, "\r\nGoodbye! Thanks for calling.\r\n")
-            session.state = SessionState.DISCONNECTED
-            return
-
-        if choice in ("3", "INFO", "SYSTEM", "?"):
-            info = (
-                "\r\n--- System Information ---\r\n"
-                f"  Name:     Modulo BBS\r\n"
-                f"  Version:  0.1-alpha\r\n"
-                f"  Runtime:  Python {sys.version.split()[0]}\r\n"
-                f"  Nodes:    {self.session_manager.active_count}/{self.max_nodes}\r\n"
-                f"  Protocol: Telnet (RFC 854/855)\r\n"
-                f"  Session:  {session.session_id} @ Node {session.node_id}\r\n"
-                f"  Terminal: {session.terminal_type}\r\n"
-                "\r\n  [Press any key to return]"
-            )
-            await self._send(session, info)
-            await self._send(session, self._get_main_menu(session))
-            return
-
-        for plugin in self._menuable_plugins():
-            if choice == plugin.menu_key.upper():
-                await self._run_plugin(plugin, session, negotiator)
-                if session.is_active:
-                    session.state = SessionState.MAIN_MENU
-                    await self._send(session, self._get_main_menu(session))
-                return
-
-        await self._send(session, "\r\nInvalid selection.\r\n")
-        await self._send(session, self._get_main_menu(session))
 
     async def _send(self, session: Session, text: str):
         """Send text to a session. Strips ANSI in plain_text mode."""

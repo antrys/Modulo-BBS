@@ -17,17 +17,21 @@ from typing import Any
 
 from core.events import EventBus
 from core.user import UserManager
-from server.session import Session, SessionManager
+from server.session import Session, SessionManager, SessionState
 
 
 class BBSApp:
     """Core application object shared by the server and all plugins."""
 
-    def __init__(self, max_nodes: int = 8, users_dir=None, plugins=None):
+    def __init__(self, max_nodes: int = 8, users_dir=None, plugins=None,
+                 config: dict | None = None):
         self.event_bus = EventBus()
         self.session_manager = SessionManager(max_nodes)
         self.user_manager = UserManager(users_dir)
         self.plugins: list[Any] = list(plugins) if plugins else []
+        # Server configuration (loaded from config.yaml by run_server.py).
+        # Plugins read it via ``bbs.config`` (e.g. logon_sequence).
+        self.config: dict = dict(config) if config else {}
         # Reference to the running transport server (telnet/SSH). Set when
         # the server is constructed so ``send`` can reuse its transport logic.
         self.server: Any = None
@@ -44,6 +48,37 @@ class BBSApp:
         """Plugins manage accounts via ``bbs.users``."""
         return self.user_manager
 
+    def get_plugin(self, name: str):
+        """Return the first loaded plugin whose ``name`` is ``name`` or None."""
+        for p in self.plugins:
+            if getattr(p, "name", None) == name:
+                return p
+        return None
+
+    # -- socket control ------------------------------------------------------
+    #
+    # Hard boundary: only core closes sockets. Plugins (sequencer, menu, any
+    # third-party) request a disconnect via bbs.disconnect(session); they
+    # never touch the writer directly.
+
+    async def disconnect(self, session: Session) -> None:
+        """Close ``session``'s socket and remove it from the session manager.
+
+        This is a core-owned primitive. Setting the state to DISCONNECTED
+        first guarantees ``session.is_active`` is False so every current
+        plugin/transport loop stops immediately.
+        """
+        session.state = SessionState.DISCONNECTED
+        writer = getattr(session, "writer", None)
+        if writer is not None:
+            try:
+                writer.close()
+                if hasattr(writer, "wait_closed"):
+                    await writer.wait_closed()
+            except Exception:  # noqa: BLE001 -- never let closing mask errors
+                pass
+        await self.session_manager.remove_session(session.session_id)
+
     async def send(self, session: Session, text: str) -> None:
         """Send ``text`` to ``session``.
 
@@ -59,6 +94,17 @@ class BBSApp:
         if writer is None:
             return
         writer.write(text.encode("latin-1", errors="replace"))
+        await writer.drain()
+
+    async def send_raw(self, session: Session, data: bytes) -> None:
+        """Send raw bytes (e.g. telnet negotiation responses) to ``session``."""
+        if self.server is not None and hasattr(self.server, "_send_raw"):
+            await self.server._send_raw(session, data)
+            return
+        writer = getattr(session, "writer", None)
+        if writer is None:
+            return
+        writer.write(data)
         await writer.drain()
 
 

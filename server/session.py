@@ -50,6 +50,9 @@ class Session:
     # Transport references (set when connection is fully established)
     reader: asyncio.StreamReader | None = None
     writer: asyncio.StreamWriter | None = None
+    # Telnet negotiation state for this session (telnet transport sets this;
+    # SSH leaves it None so input passes straight through as clean text).
+    negotiator: object | None = None
     
     # Activity tracking
     last_activity: float = field(default_factory=time.time)

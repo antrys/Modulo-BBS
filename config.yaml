@@ -1,0 +1,30 @@
+# Modulo BBS server configuration.
+#
+# CLI flags override these values: --host --port --ssh-port --nodes --plain --ssh
+#
+# server:
+#   host:         bind address
+#   telnet_port:  telnet listen port
+#   ssh_port:     SSH listen port
+#   max_nodes:    maximum concurrent nodes
+#
+# logon_plugin:   which plugin orchestrates the logon flow (a core-plugin)
+#
+# logon_sequence: read by the logon plugin. Each line is a step:
+#                   screen:<file>   display screens/<file>, no input
+#                   plugin:<name>   run the named plugin's session flow
+#   Sysops may reorder / remove / duplicate steps freely.
+
+server:
+  host: "127.0.0.1"
+  telnet_port: 6400
+  ssh_port: 6422
+  max_nodes: 8
+
+logon_plugin: logon
+
+logon_sequence:
+  - screen:splash.txt
+  - plugin:login
+  - screen:welcome.txt
+  - plugin:mainmenu

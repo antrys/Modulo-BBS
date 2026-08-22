@@ -1,0 +1,132 @@
+"""The main menu core-plugin for Modulo BBS.
+
+There is no core menu system -- the menu is just another plugin. This plugin
+iterates ``bbs.plugins``, sorts them by ``menu_order`` and renders each
+plugin's ``menu_label`` / ``menu_key`` (every plugin self-describes via the
+base class), so swapping in a different menu plugin changes nothing else.
+
+Built-in options stay inside this plugin: ``[I] System Info`` and
+``[Q] Disconnect``. Per the hard boundary, disconnect is requested through
+``bbs.disconnect(session)`` -- the plugin never closes a socket itself.
+
+The menu runs inside its ``on_session_start`` (like the login plugin, the
+whole interactive flow lives in the session-start hook) so it can be driven
+as a step in the logon sequence. Hotkey-selected plugins are entered via
+``core.runner.run_plugin_flow`` (session-start hook followed by a
+``handle_command`` loop until the plugin returns False).
+"""
+
+from __future__ import annotations
+
+import sys
+
+from plugins.base import Plugin
+from shared.telnet_protocol import ANSI
+
+from core import runner
+
+# Session state (guarded so this module imports standalone too).
+try:  # pragma: no cover - guard for environments without server.session
+    from server.session import SessionState
+except Exception:  # noqa: BLE001
+    SessionState = None
+
+
+class MainmenuPlugin(Plugin):
+    """Renders the post-login menu and dispatches selections."""
+
+    name = "mainmenu"
+    version = "1.0.0"
+    description = "Primary command menu (plugin items + System Info / Disconnect)."
+    menu_label = "Main Menu"
+    menu_key = ""                       # the menu is not itself hotkeyed
+    menu_order = 1
+
+    def __init__(self):
+        self.bbs = None
+
+    # -- lifecycle ------------------------------------------------------------
+
+    def on_load(self, bbs):
+        self.bbs = bbs
+
+    async def on_session_start(self, session):
+        """Render the menu and run the dispatch loop until disconnect."""
+        if self.bbs is None:
+            return
+        if SessionState is not None:
+            session.state = SessionState.MAIN_MENU
+        self.bbs.events.emit("menu:open", {"session": session, "menu_name": "main"})
+
+        while session.is_active:
+            await self.bbs.send(session, self._render(session))
+            text = await runner.read_command(self.bbs, session)
+            if text is None:
+                break
+            await self._handle(session, text.strip().upper())
+
+    # -- dispatch -------------------------------------------------------------
+
+    async def _handle(self, session, choice: str):
+        """Process one main-menu selection."""
+        if choice in ("Q", "QUIT", "EXIT", "OFF", "BYE"):
+            await self.bbs.send(session, "\r\nGoodbye! Thanks for calling.\r\n")
+            await self.bbs.disconnect(session)
+            return
+
+        if choice in ("I", "3", "INFO", "SYSTEM", "?"):
+            await self.bbs.send(session, self._system_info(session))
+            return
+
+        for plugin in self._menuable():
+            if choice == plugin.menu_key.upper():
+                self.bbs.events.emit("menu:select", {
+                    "session": session, "option": choice, "menu_name": "main",
+                })
+                await runner.run_plugin_flow(self.bbs, plugin, session)
+                return
+
+        await self.bbs.send(session, "\r\nInvalid selection.\r\n")
+
+    # -- rendering ------------------------------------------------------------
+
+    def _render(self, session) -> str:
+        """Plugin options sorted by menu_order, then the built-ins."""
+        w = min(getattr(session, "terminal_width", 80), 60)
+        bar = "=" * w
+        C = ANSI.BRIGHT_CYAN
+        B = ANSI.BOLD
+        W = ANSI.BRIGHT_WHITE
+        R = ANSI.RESET
+
+        lines = [C + B + bar + R, C + B + "  Main Menu" + R, C + B + bar + R, ""]
+        for plugin in self._menuable():
+            label = getattr(plugin, "menu_label", "") or plugin.name
+            lines.append(C + f"  [{plugin.menu_key.upper()}] {label}" + R)
+        lines.append(C + "  [I] System Info" + R)
+        lines.append(C + "  [Q] Disconnect" + R)
+        lines.append("")
+        lines.append(W + "  Select: " + R)
+        return "\r\n".join(lines)
+
+    def _system_info(self, session) -> str:
+        """Static system information block."""
+        mgr = self.bbs.session_manager
+        return (
+            "\r\n--- System Information ---\r\n"
+            f"  Name:     Modulo BBS\r\n"
+            f"  Version:  0.1-alpha\r\n"
+            f"  Runtime:  Python {sys.version.split()[0]}\r\n"
+            f"  Nodes:    {mgr.active_count}/{mgr.max_nodes}\r\n"
+            f"  Session:  {session.session_id} @ Node {session.node_id}\r\n"
+            f"  Terminal: {session.terminal_type}\r\n"
+        )
+
+    def _menuable(self):
+        """Plugins that appear as hotkey-selectable main-menu items."""
+        items = [p for p in self.bbs.plugins if getattr(p, "menu_key", "")]
+        items.sort(key=lambda p: (getattr(p, "menu_order", 100), p.menu_key.upper()))
+        return items
+
+
+__all__ = ["MainmenuPlugin"]

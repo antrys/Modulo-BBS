@@ -1,16 +1,16 @@
 """
-SSH transport for NetRunner BBS.
+SSH transport for Modulo BBS.
 Uses asyncssh to provide SSH access alongside telnet.
 Supports "no auth" mode (public access without credentials).
 SyncTERM/cryptlib compatible: RSA host key, SHA-1 KEX, CBC ciphers, raw bytes.
 
-Authentication and the post-login experience are delegated to the loaded
-plugins exactly like the telnet server: the MODULO banner is core (kept
-here), then the ``login`` plugin's ``on_session_start`` drives the entire
-auth flow, and after login the (plugin-aware) main menu is shown. The SSH
-session bridges the asyncssh channel to the shared :class:`server.session.Session`
-object (providing ``reader`` / ``writer`` so ``bbs.send`` and the login plugin's
-line-reading terminal work unchanged over SSH).
+After the SSH handshake the session bridges the asyncssh channel to a shared
+:class:`server.session.Session` object (providing ``reader`` / ``writer`` so
+``bbs.send`` and the plugin line-reading terminals work unchanged over SSH).
+Like the telnet server, it then invokes the core bootstrap hook
+(:func:`core.runner.run_bootstrap`), handing the session to the configured
+``logon_plugin`` (the ``logon`` sequencer) which drives the whole logon flow --
+splash, login, welcome, menu -- identically over SSH.
 """
 
 import asyncio
@@ -33,8 +33,8 @@ logger = logging.getLogger("bbs.ssh")
 class _SSHWriter:
     """Expose a stream-writer surface (``write``/``is_closing``/``drain``)
     over an asyncssh channel so the core ``bbs.send`` / ``server._send``
-    transport path works for SSH sessions too (the login plugin and menu
-    plugins send text through those paths)."""
+    transport path works for SSH sessions too (the logon sequencer, login
+    plugin and main menu send text through those paths)."""
 
     def __init__(self, chan):
         self._chan = chan
@@ -49,6 +49,13 @@ class _SSHWriter:
         # asyncssh buffers and flushes internally; nothing to await here.
         return None
 
+    def close(self):
+        if not self._chan.is_closing():
+            self._chan.close()
+
+    async def wait_closed(self):
+        return None
+
 
 class BBSSSHSession(asyncssh.SSHServerSession):
     """AsyncSSH session that bridges to the BBS session logic.
@@ -59,8 +66,8 @@ class BBSSSHSession(asyncssh.SSHServerSession):
         self.bbs = bbs
         self._chan = None
         self._session: Session | None = None
-        # StreamReader fed by data_received so the login plugin can read
-        # CRLF-terminated lines via ``session.reader.readline()``.
+        # StreamReader fed by data_received so plugins can read CRLF-terminated
+        # lines via ``session.reader.readline()``.
         self._reader: asyncio.StreamReader | None = None
 
     def connection_made(self, chan):
@@ -104,8 +111,8 @@ class BBSSSHSession(asyncssh.SSHServerSession):
 
     def data_received(self, data, datatype):
         # With encoding=None, data is bytes. Normalise line endings so the
-        # login / menu line readers see clean \n-terminated lines from any
-        # client (SyncTERM sends bare \r on Enter).
+        # plugin line readers see clean \n-terminated lines from any client
+        # (SyncTERM sends bare \r on Enter).
         if self._reader is None:
             return
         raw = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
@@ -127,197 +134,24 @@ class BBSSSHSession(asyncssh.SSHServerSession):
             self._chan.close()
             return
 
-        # Core MODULO banner, then hand the whole auth experience to the
-        # login plugin (same flow as the telnet server's _login_flow).
-        self._session.state = SessionState.LOGIN
-        await self._send(b"\033[2J\033[1;1H")
-        await self._send(self._get_banner().encode('latin-1'))
-        logger.info("shell_loop: banner sent, running login plugin")
+        # No telnet negotiation over SSH: input is already clean text.
+        self._session.negotiator = None
+        self._session.state = SessionState.CONNECTED
 
-        authenticated = False
-        plugin = self._find_login_plugin()
-        if plugin is None:
-            logger.error("No 'login' plugin loaded; cannot authenticate.")
-        else:
-            try:
-                result = plugin.on_session_start(self._session)
-                if asyncio.iscoroutine(result):
-                    authenticated = bool(await result)
-                else:
-                    authenticated = bool(result)
-            except Exception:
-                logger.exception("login plugin on_session_start failed")
+        # Core bootstrap hook (identical to the telnet server): the configured
+        # ``logon_plugin`` orchestrates the whole logon flow over SSH.
+        logger.info("shell_loop: running bootstrap (logon plugin)")
+        from core.runner import run_bootstrap
+        await run_bootstrap(self.bbs, self._session)
 
-        if not authenticated or not self._session.is_active:
-            await self._send(b"\r\nGoodbye! Thanks for calling.\r\n")
-            if self._chan and not self._chan.is_closing():
-                self._chan.close()
-            logger.info("shell_loop: not authenticated, closing")
-            await self._cleanup()
-            return
-
-        # Login success (the plugin sets state to MAIN_MENU on success) ->
-        # show the plugin-aware main menu.
-        if self._session.state == SessionState.LOGIN:
-            self._session.state = SessionState.MAIN_MENU
-        await self._main_menu()
+        # The logon flow is responsible for disconnecting on exit (Q, idle,
+        # unavailable). If it finished with the session still open, close it
+        # so the connection never hangs.
+        if self._session.is_active:
+            await self.bbs.disconnect(self._session)
 
         logger.info("shell_loop: exiting")
         await self._cleanup()
-
-    async def _main_menu(self):
-        """Post-login main menu: plugin options plus built-ins, driven over
-        the SSH reader/writer."""
-        await self._send(self._get_menu().encode('latin-1'))
-        while self._session.is_active:
-            try:
-                data = await asyncio.wait_for(
-                    self._reader.read(1024), timeout=300
-                )
-            except asyncio.TimeoutError:
-                await self._send(b"\r\n\r\n[Idle timeout. Goodbye!]\r\n")
-                break
-            if not data:
-                break
-            self._session.touch()
-            self._session.bytes_received += len(data)
-            text = data.decode('latin-1', errors='replace')
-            if not await self._handle_menu_input(text):
-                break
-
-    async def _handle_menu_input(self, text: str) -> bool:
-        """Process one main-menu selection. Returns False to end the session
-        (disconnect), True to stay at the menu."""
-        choice = text.strip().upper()
-
-        if choice in ("Q", "QUIT", "EXIT", "OFF", "BYE"):
-            await self._send(b"\r\nGoodbye! Thanks for calling.\r\n")
-            self._session.state = SessionState.DISCONNECTED
-            if self._chan and not self._chan.is_closing():
-                self._chan.close()
-            return False
-
-        if choice in ("3", "INFO", "SYSTEM", "?"):
-            info = (
-                "\r\n--- System Information ---\r\n"
-                f"  Name:     Modulo BBS\r\n"
-                f"  Version:  0.1-alpha\r\n"
-                f"  Runtime:  Python {sys.version.split()[0]}\r\n"
-                f"  Nodes:    {self.bbs.session_manager.active_count}"
-                f"/{self.bbs.session_manager.max_nodes}\r\n"
-                f"  Protocol: SSH (asyncssh, cryptlib compat)\r\n"
-                f"  Session:  {self._session.session_id} @ Node {self._session.node_id}\r\n"
-                f"  Terminal: {self._session.terminal_type}\r\n"
-                "\r\n  [Press any key to return]"
-            )
-            await self._send(info.encode('latin-1'))
-            await self._send(self._get_menu().encode('latin-1'))
-            return True
-
-        for plugin in self._menuable_plugins():
-            if choice == plugin.menu_key.upper():
-                await self._run_plugin(plugin)
-                if self._session.is_active:
-                    self._session.state = SessionState.MAIN_MENU
-                    await self._send(self._get_menu().encode('latin-1'))
-                else:
-                    return False
-                return True
-
-        await self._send(b"\r\nInvalid selection.\r\n")
-        await self._send(self._get_menu().encode('latin-1'))
-        return True
-
-    async def _run_plugin(self, plugin):
-        """Enter a menu plugin: run its session-start hook, then its command
-        loop until ``handle_command`` returns False (returns to the menu)."""
-        try:
-            result = plugin.on_session_start(self._session)
-            if asyncio.iscoroutine(result):
-                await result
-        except Exception:
-            logger.exception("plugin %s on_session_start failed", plugin.name)
-
-        while self._session.is_active:
-            try:
-                data = await asyncio.wait_for(
-                    self._reader.read(1024), timeout=300
-                )
-            except asyncio.TimeoutError:
-                await self._send(b"\r\n\r\n[Idle timeout. Goodbye!]\r\n")
-                break
-            if not data:
-                break
-            self._session.touch()
-            self._session.bytes_received += len(data)
-            text = data.decode('latin-1', errors='replace')
-            try:
-                stay = bool(plugin.handle_command(self._session, text))
-            except Exception:
-                logger.exception("plugin %s handle_command failed", plugin.name)
-                stay = False
-            if not stay:
-                break
-
-    # -- banner / menu / plugin helpers -----------------------------------
-
-    def _core_server(self):
-        """The running transport server (the telnet BBSServer, set as
-        ``bbs.server``) that renders the core MODULO banner and menu; or None
-        when SSH runs standalone."""
-        try:
-            return self.bbs.server
-        except AttributeError:
-            return None
-
-    def _get_banner(self) -> str:
-        """Core MODULO banner (shared with the telnet server) or a minimal
-        fallback when no core server is attached."""
-        srv = self._core_server()
-        if srv is not None and hasattr(srv, "_get_banner"):
-            return srv._get_banner(self._session)
-        w = min(self._session.terminal_width, 60)
-        bar = "=" * w
-        return "\r\n".join([
-            f"{bar}",
-            f"  MODULO",
-            f"{bar}",
-            "",
-            f"  Welcome to Modulo BBS",
-            f"  Node {self._session.node_id} | {self._session.terminal_type}",
-        ])
-
-    def _get_menu(self) -> str:
-        """Plugin-aware main menu (shared with the telnet server) or a
-        minimal fallback when no core server is attached."""
-        srv = self._core_server()
-        if srv is not None and hasattr(srv, "_get_main_menu"):
-            return srv._get_main_menu(self._session)
-        lines = ["  Main Menu", ""]
-        for p in self._menuable_plugins():
-            label = getattr(p, "menu_label", "") or p.name
-            lines.append(f"  [{p.menu_key.upper()}] {label}")
-        lines.append("  [3] System Info")
-        lines.append("  [Q] Disconnect")
-        lines.append("")
-        lines.append("  Select: ")
-        return "\r\n".join(lines)
-
-    def _find_login_plugin(self):
-        """Return the plugin whose ``name`` is ``\"login\"``, or None."""
-        for p in self.bbs.plugins:
-            if getattr(p, "name", None) == "login":
-                return p
-        return None
-
-    def _menuable_plugins(self):
-        """Plugins that appear as hotkey-selectable main-menu items."""
-        srv = self._core_server()
-        if srv is not None and hasattr(srv, "_menuable_plugins"):
-            return srv._menuable_plugins()
-        items = [p for p in self.bbs.plugins if getattr(p, "menu_key", "")]
-        items.sort(key=lambda p: (getattr(p, "menu_order", 100), p.menu_key.upper()))
-        return items
 
     async def _send(self, data: bytes):
         if not self._chan or self._chan.is_closing():
@@ -354,7 +188,8 @@ class BBSSSHSession(asyncssh.SSHServerSession):
 
 class BBSSSHServer(asyncssh.SSHServer):
     """SSH server that accepts all connections (no auth) and wires each
-    session to the shared BBSApp (plugins drive auth and the main menu)."""
+    session to the shared BBSApp (the logon sequencer drives auth and the
+    main menu)."""
 
     def __init__(self, bbs):
         self.bbs = bbs
@@ -376,7 +211,8 @@ async def start_ssh_server(bbs, host: str = "127.0.0.1", port: int = 6422):
     """Start the SSH BBS server with SyncTERM/cryptlib compatibility.
 
     ``bbs`` is the shared :class:`core.app.BBSApp` (same object handed to the
-    telnet server); its loaded plugins drive authentication and the menu.
+    telnet server); its loaded plugins -- orchestrated by the logon sequencer --
+    drive authentication and the menu.
     """
     if asyncssh is None:
         logger.error("asyncssh not installed. Run: pip install asyncssh")

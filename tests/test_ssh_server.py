@@ -9,12 +9,19 @@ disconnect all come from the plugin system rather than hardcoded logic.
 
 The async flows are driven synchronously via ``asyncio.run`` (matching the
 style used in the other test modules).
+
+Each app is wired with the full core-plugin stack -- ``login``, ``logon``
+(sequencer) and ``mainmenu`` -- so the transport's bootstrap hook finds the
+``logon`` sequencer and drives splash -> login -> welcome -> menu exactly as
+a configured board would.
 """
 
 import asyncio
 
 from core.app import BBSApp
 from plugins.login import LoginPlugin
+from plugins.logon import LogonPlugin
+from plugins.mainmenu import MainmenuPlugin
 from server.ssh_server import BBSSSHSession
 
 
@@ -46,11 +53,13 @@ class FakeChan:
 
 
 def _make_app(tmp_path):
-    """BBSApp wired to throwaway users storage, with the login plugin loaded."""
+    """BBSApp wired to throwaway users storage, with the core-plugin stack
+    (login + logon sequencer + mainmenu) loaded."""
     app = BBSApp(users_dir=tmp_path / "users")
-    plugin = LoginPlugin()
-    plugin.on_load(app)
-    app.plugins = [plugin]
+    plugins = [LoginPlugin(), LogonPlugin(), MainmenuPlugin()]
+    for plugin in plugins:
+        plugin.on_load(app)
+    app.plugins = plugins
     return app
 
 
