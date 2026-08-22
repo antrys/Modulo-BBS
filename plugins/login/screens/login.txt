@@ -9,4 +9,4 @@
 {BRIGHT_BLACK}------------------------------------------------------------{RESET}
 {BRIGHT_GREEN}Please enter your username and password below.{RESET}
 
-{BRIGHT_CYAN}Login: {RESET}
+
