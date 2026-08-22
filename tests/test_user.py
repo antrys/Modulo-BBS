@@ -57,66 +57,57 @@ def test_default_fields():
     u = User(username="alice", display_name="Alice", password_hash="abc123")
     assert u.username == "alice"
     assert u.display_name == "Alice"
-    assert u.flags == ["user"]
+    assert u.groups == ["user"]
     assert u.stats == {}
     assert u.preferences == {}
     assert u.email == ""
 
 
-def test_has_flag():
-    u = User("bob", "Bob", "h", flags=["user", "mod"])
-    assert u.has_flag("mod") is True
-    assert u.has_flag("user") is True
-    assert u.has_flag("sysop") is False
+def test_default_user_group():
+    u = User("bob", "Bob", "h")
+    assert u.groups == ["user"]
+    assert u.in_group("user") is True
+    assert u.in_group("sysop") is False
 
 
-def test_default_user_can_basic_actions():
-    u = User("carla", "Carla", "h")  # flags=["user"]
-    assert u.has_permission("messageboard:read") is True
-    assert u.has_permission("messageboard:post") is True
-    assert u.has_permission("files:download") is True
-    assert u.has_permission("chat:message") is True  # default non-admin action
-    assert u.has_permission("messageboard:delete") is False  # moderation
+def test_explicit_groups_membership():
+    u = User("carla", "Carla", "h", groups=["Moderator", "veterans"])
+    # case-insensitive membership
+    assert u.in_group("moderator") is True
+    assert u.in_group("VETERANS") is True
+    assert u.in_group("sysop") is False
 
 
-def test_guest_is_read_only():
-    u = User("g", "Guest", "h", flags=["guest"])
-    assert u.has_permission("messageboard:read") is True
-    assert u.has_permission("messageboard:post") is False
-    assert u.has_permission("files:upload") is False
+def test_sysop_group_has_everything():
+    owner = User("o", "Owner", "h", groups=["sysop"])
+    plain = User("p", "Plain", "h")          # groups=["user"]
+
+    # sysop passes any gate, even ones naming unknown groups
+    for req in ([], ["moderators"], ["secret-club"], ["traders", "veterans"]):
+        assert owner.can_access(req) is True
+
+    # a plain user only passes public and own-group gates
+    assert plain.can_access([]) is True
+    assert plain.can_access(["user"]) is True
+    assert plain.can_access(["moderators"]) is False
 
 
-def test_mod_gets_moderation_actions():
-    u = User("d", "Dave", "h", flags=["user", "mod"])
-    assert u.has_permission("messageboard:delete") is True  # mod-level action
-    assert u.has_permission("messageboard:edit") is True
-    assert u.has_permission("messageboard:moderate") is True
+def test_can_access_any_of_semantics():
+    u = User("d", "D", "h", groups=["traders", "veterans"])
+    assert u.can_access(["traders"]) is True
+    assert u.can_access(["something-else", "Veterans"]) is True  # any-of
+    assert u.can_access(["secret-club"]) is False
+    assert u.can_access(None) is True       # None = public
+    assert u.can_access([]) is True         # empty = public
 
 
-def test_admin_gets_admin_and_user_management():
-    u = User("e", "Eve", "h", flags=["admin"])
-    assert u.has_permission("users:delete") is True
-    assert u.has_permission("system:config") is True
-    assert u.has_permission("messageboard:read") is True
-
-
-def test_sysop_has_everything():
-    u = User("o", "Owner", "h", flags=["sysop"])
-    assert u.has_permission("anything:atall") is True
-    assert u.has_permission("system:wipe") is True
-
-
-def test_own_action_available_to_any_non_guest():
-    user = User("f", "Faye", "h")
-    assert user.has_permission("messageboard:delete_own") is True
-    guest = User("g", "Guest", "h", flags=["guest"])
-    assert guest.has_permission("messageboard:delete_own") is False
-
-
-def test_empty_or_garbage_permission():
-    u = User("x", "X", "h")
-    assert u.has_permission("") is False
-    assert u.has_permission(None) is False
+def test_gate_helper_is_the_only_mechanism():
+    # Plugin gates (menu items, actions, areas) all use can_access with the
+    # configured requirement -- there is no second permission system.
+    doors = User("door", "Door", "h", groups=["gamers"])
+    assert doors.can_access(["gamers"]) is True      # door-menu game gate
+    board = User("mb", "MB", "h", groups=[])         # default user
+    assert board.can_access(["gamers"]) is False
 
 
 def test_verify_password_bcrypt():
@@ -146,7 +137,7 @@ def test_to_from_dict_round_trip():
         display_name="RT",
         password_hash="hash",
         email="rt@example.com",
-        flags=["user", "mod"],
+        groups=["moderator", "veterans"],
         stats={"posts": 3},
         preferences={"theme": "dark"},
     )
@@ -155,7 +146,7 @@ def test_to_from_dict_round_trip():
     assert restored.display_name == u.display_name
     assert restored.password_hash == u.password_hash
     assert restored.email == u.email
-    assert restored.flags == u.flags
+    assert restored.groups == u.groups
     assert restored.stats == u.stats
     assert restored.preferences == u.preferences
     assert restored.created == u.created
@@ -179,7 +170,7 @@ def test_create_and_get(manager):
     async def _test():
         user = await manager.create("tester", "hunter2", "Tester User", "t@x.com")
         assert user.username == "tester"
-        assert user.flags == ["user"]
+        assert user.groups == ["user"]
         assert await manager.get("tester") == user
         assert (await manager.get("tester")).verify_password("hunter2") is True
         # Wait for the coroutine to fully complete before asserting on the file.
@@ -246,14 +237,14 @@ def test_update_other_fields(manager):
             "u",
             display_name="New Name",
             email="new@x.com",
-            flags=["user", "mod"],
+            groups=["moderator"],
             preferences={"theme": "light"},
             stats={"posts": 10},
         )
         user = await manager.get("u")
         assert user.display_name == "New Name"
         assert user.email == "new@x.com"
-        assert user.flags == ["user", "mod"]
+        assert user.groups == ["moderator"]
         assert user.preferences == {"theme": "light"}
         assert user.stats == {"posts": 10}
 
@@ -377,14 +368,12 @@ def test_groups_membership_and_access():
     assert not u.can_access(["secret-club"])
 
 
-def test_staff_bypasses_group_requirements():
-    mod = User(username="m", display_name="", password_hash="x", flags=["mod"],
-               groups=[])
-    sysop = User(username="s", display_name="", password_hash="x", flags=["sysop"])
+def test_sysop_group_bypasses_group_requirements():
+    sysop = User(username="s", display_name="", password_hash="x",
+                 groups=["sysop"])
     plain = User(username="p", display_name="", password_hash="x")
 
-    for staff in (mod, sysop):
-        assert staff.can_access(["secret-club"])   # staff sees everything
+    assert sysop.can_access(["secret-club"])       # sysop group sees everything
     assert not plain.can_access(["secret-club"])   # non-member denied
     assert plain.can_access([])                    # but public areas fine
 
@@ -419,6 +408,8 @@ def test_legacy_user_file_without_groups_loads(tmp_path):
     async def _test():
         u = await manager.get("dave")
         assert u is not None
-        assert u.groups == []          # defaults to empty, loads cleanly
+        # Legacy file had no groups key; user now defaults to the standard
+        # "user" group (a sysop can reassign, e.g. to ["sysop"], as needed).
+        assert u.groups == ["user"]
 
     run(_test())

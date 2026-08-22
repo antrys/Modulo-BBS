@@ -67,7 +67,7 @@ class User:
     email: str
     created: datetime
     last_login: datetime
-    flags: list[str]             # ["sysop", "mod", "user"]
+    groups: list[str]            # ["user"], ["sysop"], ["moderator", ...]
     stats: dict                  # Per-plugin stats (posts, files, etc.)
     preferences: dict            # Theme, notifications, etc.
 ```
@@ -78,8 +78,8 @@ class User:
 - `bbs.users.update(username, **fields)` → User
 - `bbs.users.delete(username)` → bool
 - `bbs.users.list()` → list[User]
-- `user.has_flag("mod")` → bool
-- `user.has_permission("messageboard:delete")` → bool
+- `user.in_group("moderator")` → bool (pure membership test)
+- `user.can_access(["moderator"])` → bool (the one access rule)
 
 **Core owns:** the `users/` directory at the project root (one JSON file per
 account). Core-owned data lives *outside* `plugins/` so a plugin can be
@@ -289,110 +289,103 @@ There is no key-value convenience layer — plugins compose `pathlib` and
 `json` directly against their directory. Names passed to `storage.dir()` must
 match `[a-z0-9_-]+`; anything else raises `core.storage.StorageError`.
 
-## Permission System
+## Permission System (Groups)
 
-### How Flags Become Permissions
+One mechanism, no levels, no ACL matrices. A user belongs to **groups**
+(plain lowercase labels); plugins gate access through group requirements.
+This is a BBS, not a classified system — the whole design fits on one page.
 
-There is no per-plugin permission configuration and no flag→permission map
-to maintain. Resolution is a single algorithm in core
-(`core/user.py`, `_required_level`): every flag has an access **level**, and
-every `namespace:action` string requires one of those levels. Plugins don't
-declare anything — they just choose action names whose level matches the
-intent.
+### The one built-in rule: the sysop group
 
-| Flag | Level |
-|------|-------|
-| `sysop` | 4 — everything |
-| `admin` | 3 — also all admin namespaces (`users:*`, `system:*`, `config:*`, `auth:*`) |
-| `mod` | 2 — also moderation actions in any namespace (delete, edit, moderate, warn, kick, ban, unban) |
-| `user` | 1 — standard actions (post, reply, upload, download, send, ...) |
-| `guest` | 0 — read-only actions (read, view, list, search) |
+`sysop` is the only reserved group name. Members of the `sysop` group have
+access to everything, on every plugin and every action. It always exists as
+a static; you cannot redefine or shadow it.
 
-A user's effective level is the **max** across their flags. A permission is
-granted when effective level ≥ required level.
+Every other group is a free-form label the sysop invents (`user`,
+`moderator`, `veterans`, `traders`, ...) and assigns to users via
+`bbs.users.update(username, groups=[...])`. New users default to
+`groups=["user"]`.
 
-Resolution order for `namespace:action`:
+### How plugins gate access
 
-1. Action ends in `_own` (e.g. `messageboard:delete_own`) → requires `user`.
-   Self-service on your own content.
-2. Namespace is an admin namespace (`users`, `system`, `config`, `auth`) →
-   requires `admin`. Always admin, regardless of the action.
-3. Action is a moderation keyword → requires `mod`.
-4. Action is read-only (`read`, `view`, `list`, `search`) → allowed for
-   `guest`.
-5. Anything else → requires `user`.
-
-Unknown flags contribute nothing (level 0), so typos fail closed.
-
-### Permissions
-
-Plugins define their own permission strings by convention:
-`<plugin_name>:<action>`:
+**Rule 1 — every plugin gates itself.** Each plugin checks at entry that the
+user may use it at all:
 
 ```python
-# In messageboard plugin
-"messageboard:read"       # guest-level (read-only action)
-"messageboard:post"       # user-level (standard action)
-"messageboard:delete"     # mod-level ("delete" is a moderation keyword)
-"messageboard:delete_own" # user-level (self-service suffix)
+async def on_session_start(self, session):
+    if not session.user.can_access(self.required_groups):
+        await self.bbs.send(session, "Access denied.\r\n")
+        return False          # back to menu
 ```
 
-Pick the action word to get the level you mean: name a destructive action
-`delete`/`ban`/... and it's mod-only automatically; name it `remove_item`
-and it's ordinary-user. If you need a custom threshold, check the flag
-directly: `user.has_flag("sysop")`.
+`required_groups` comes from config (below). Empty list or missing key =
+open to everyone.
 
-### Checking Permissions
+**Rule 2 — plugins may attach group requirements anywhere inside.** Any
+action, sub-board, menu item, or door can carry its own requirement:
 
 ```python
-# In a plugin
-if session.user.has_permission("messageboard:delete"):
-    # Allow deletion
-else:
-    bbs.send(session, "Permission denied.\r\n")
+# messageboard sub-boards with different audiences
+BOARDS = [
+    {"name": "general",  "requires": []},            # public
+    {"name": "trading",  "requires": ["traders"]},   # members-only
+    {"name": "ops",      "requires": ["moderator"]},
+]
+for board in BOARDS:
+    if session.user.can_access(board["requires"]):
+        ...render this board's line...
 ```
 
-### Groups (Limited-Access Areas)
+Same shape for a door menu: each game is an option with its own `requires`
+list, all exposed to the sysop through config. One helper — `can_access` —
+covers plugin-level, area-level, and action-level gates alike.
 
-Flags answer "what can this user *do*?" Groups answer "where can this user
-*go*?" — the limited-access portions of the board. This is deliberately not
-the legacy numeric-levels-per-area system: membership in a club is not a rank,
-and rank is already covered by flags.
+### Communicating options to core/config
 
-**The model:**
+Plugins expose their gateable resources by declaring them in their section of
+the central config (see Configuration). The convention:
 
-* `User.groups: list[str]` — plain lowercase labels. No hierarchy, no levels,
-  nothing inherited. Default `[]`. Managed by sysop command (`/group add
-  <user> <group>`), never self-service by default.
-* An area (sub-board, file area, chat room) carries a `requires` list of group
-  names. Empty list = public.
-* **One rule**, implemented once in core as `User.can_access(requires)`:
+```yaml
+plugins:
+  messageboard:
+    required_groups: []            # plugin-level gate (Rule 1)
+    boards:
+      general:   { requires: [] }
+      trading:   { requires: [traders] }
+      ops:       { requires: [moderator] }
+  doors:
+    required_groups: []
+    games:
+      tradewars: { requires: [veterans] }
+      klondike:  { requires: [] }
+```
+
+The plugin reads its own section via `bbs.config`, applies `can_access`
+against whatever it finds, and treats unknown/missing keys as open access.
+The future HTTP API exposes the same sections so remote tooling can edit
+them. Core stays ignorant of plugin-specific shapes — it only supplies the
+config dict, the user's groups, and `can_access`.
+
+### The access rule
+
+Implemented once in core as `User.can_access(requires)`:
 
 | Condition | Result |
 |-----------|--------|
-| `requires` empty or None | everyone enters (public) |
-| user holds `mod` or above | always enters (staff see everything) |
-| user's groups intersect `requires` | enters (**any-of**, not all-of) |
+| `requires` empty/None | everyone enters (public/open) |
+| user is in the `sysop` group | always granted |
+| user's groups intersect `requires` | granted (**any-of**, not all-of) |
 | otherwise | denied |
 
-```python
-# In a plugin, gating an area:
-if session.user.can_access(area.requires):
-    await show_area(session, area)
-else:
-    await bbs.send(session, "\r\nAccess denied.\r\n")
-```
+Design notes:
 
-**Design notes:**
-
-* Any-of semantics: requiring `["traders", "veterans"]` admits a member of
-  either group. All-of semantics would be a different, rarely-wanted feature —
-  don't add it until a real board needs it.
-* Case-insensitive everywhere; stored lowercase. Typos in a group name fail
-  closed (a required group nobody belongs to is just an empty room).
-* Groups are orthogonal to flags: a `mod` with no groups still sees every
-  area; a `guest` in `["veterans"]` still can't post.
-* Legacy users without a `groups` key in their JSON load cleanly (`[]`).
+* Case-insensitive everywhere; stored lowercase. A required group nobody
+  belongs to fails closed (an empty room, not an open door).
+* Groups are labels, not ranks — there are no levels, no inheritance, no
+  action-keyword magic. If a plugin wants "moderator-only" behavior, the
+  sysop creates a `moderator` group and puts people in it.
+* Legacy user files written before groups existed load cleanly and default
+  to `["user"]`.
 
 ## HTTP API (Future)
 

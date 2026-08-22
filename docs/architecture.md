@@ -201,7 +201,7 @@ API authentication via API keys (not session passwords).
     "display_name": "Dave",
     "created": "2026-08-21T00:00:00Z",
     "last_login": "2026-08-21T12:00:00Z",
-    "flags": ["sysop"],
+    "groups": ["sysop"],
     "stats": {
         "posts": 42,
         "files_uploaded": 5,

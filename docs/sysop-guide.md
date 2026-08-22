@@ -50,18 +50,30 @@ Users are stored in `users/` at the project root. Each user is a JSON file:
     "password_hash": "bcrypt_hash_here",
     "display_name": "Dave",
     "created": "2026-08-21T00:00:00Z",
-    "flags": ["sysop"]
+    "groups": ["sysop"]
 }
 ```
 
-### User Flags
+### User Groups
 
-| Flag | Description |
-|------|-------------|
-| `sysop` | Full system access |
-| `admin` | User management, system config |
-| `mod` | Message board moderation |
-| `user` | Standard access (default for new accounts) |
+Access control is group-based. A user's `groups` list decides what they can
+use; plugins may attach their own group requirements to any area, menu item,
+or action (all exposed in `config.yaml`).
+
+One group name is special:
+
+| Group | Description |
+|-------|-------------|
+| `sysop` | Reserved. Members have access to everything, everywhere. |
+| `user` | Conventional default for new accounts (not reserved — just a name) |
+| anything else | Free-form labels you invent (`moderator`, `veterans`, `traders`, ...) |
+
+Assign groups by editing the user's JSON or via
+`bbs.users.update(username, groups=[...])`. New users get `["user"]`.
+
+To restrict part of a plugin (a sub-board, a door game), set its
+`requires: [groupname]` in `config.yaml`; leave it empty or omit it to keep
+it open to everyone.
 
 ### Password Policy
 

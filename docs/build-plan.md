@@ -15,12 +15,12 @@
 **Spec:** See `docs/plugin-spec.md` — User Model section.
 **Deliverables:**
 - `core/user.py` with `User` dataclass and `UserManager` class
-- Fields: username, display_name, password_hash, email, created, last_login, flags, stats, preferences
+- Fields: username, display_name, password_hash, email, created, last_login, groups, stats, preferences
 - Methods: get, create, update, delete, list
 - Storage: `users/` directory at project root (JSON files)
-- `user.has_flag(flag)` and `user.has_permission(perm)` methods
+- `user.in_group(group)` and `user.can_access(requires)` methods
 - Password hashing with bcrypt
-**Test:** Unit test that creates user, retrieves, updates, checks flags.
+**Test:** Unit test that creates user, retrieves, updates, checks groups.
 
 ## Task 3: Plugin Base Class (plugins/base.py)
 **Goal:** Define the plugin interface.

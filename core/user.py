@@ -7,7 +7,7 @@ JSON-file storage in the ``users/`` directory at the project root.
 
 Per the plugin spec: auth *flows* (login/registration screens) are owned by the
 auth plugin; the core owns the model and storage only. Plugins check access via
-``user.has_flag()`` and ``user.has_permission()`` rather than inspecting flags.
+``user.in_group()`` and ``user.can_access()`` rather than inspecting groups.
 """
 
 from __future__ import annotations
@@ -44,68 +44,20 @@ class InvalidFieldError(UserError, ValueError):
 class PermissionDenied(UserError, PermissionError):
     """Raised when a user lacks the permission to do something.
 
-    This is not raised by the model itself (plugins check ``has_permission``
+    This is not raised by the model itself (plugins check ``can_access``
     and decide how to respond) but is provided for callers that prefer raising.
     """
 
 
 # ---------------------------------------------------------------------------
-# Permission / flag semantics
+# Groups / access semantics
 # ---------------------------------------------------------------------------
 
-# Access levels, low to high. The user's effective level is the max of their
-# flags' levels; a permission is granted when the user's level is >= the
-# permission's required level.
-_FLAG_LEVEL = {"guest": 0, "user": 1, "mod": 2, "admin": 3, "sysop": 4}
-
-# Namespaces that concern account/system administration. Any permission in
-# these namespaces requires admin (e.g. "users:delete", "system:config").
-_ADMIN_NAMESPACES = ("users", "system", "config", "auth")
-
-# Action keywords that (outside admin namespaces) require moderation level.
-_MOD_ACTIONS = {"delete", "edit", "moderate", "warn", "kick", "ban", "unban"}
-
-# Action keywords available to guests (read-only access).
-_GUEST_ACTIONS = {"read", "view", "list", "search"}
-
-
-def _action_of(permission: str) -> str:
-    """Return the trailing action token of a ``namespace:action`` permission."""
-    return permission.rsplit(":", 1)[-1].lower()
-
-
-def _required_level(permission: str) -> int:
-    """The minimum access level needed to perform ``permission``."""
-    ns, _, _ = permission.rpartition(":")
-    action = _action_of(permission)
-
-    # Self-service: "namespace:delete_own" / "edit_own" — any non-guest.
-    if action.endswith("_own"):
-        return _FLAG_LEVEL["user"]
-
-    # Account / system administration is admin-level, period.
-    if ns in _ADMIN_NAMESPACES:
-        return _FLAG_LEVEL["admin"]
-
-    # Content moderation (in any content namespace) is mod-level.
-    if action in _MOD_ACTIONS:
-        return _FLAG_LEVEL["mod"]
-
-    # Read-only access is available to guests.
-    if action in _GUEST_ACTIONS:
-        return _FLAG_LEVEL["guest"]
-
-    # Everything else (post, reply, upload, download, send, join, ...) is
-    # standard-user level.
-    return _FLAG_LEVEL["user"]
-
-
-def _user_level(flags) -> int:
-    """The user's highest access level across their flags."""
-    level = 0
-    for flag in (flags or []):
-        level = max(level, _FLAG_LEVEL.get(flag, 0))
-    return level
+# The one group name with built-in meaning: members of the "sysop" group
+# have access to everything, on every plugin and every action. All other
+# groups are free-form labels the sysop invents ("user", "moderator",
+# "veterans", "traders", ...) and plugins gate with.
+SYSOP_GROUP = "sysop"
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +98,7 @@ class User:
     location: str = ""
     created: datetime = field(default_factory=_now)
     last_login: datetime | None = field(default=None)
-    flags: list[str] = field(default_factory=lambda: ["user"])
-    groups: list[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=lambda: ["user"])
     stats: dict = field(default_factory=dict)
     preferences: dict = field(default_factory=dict)
 
@@ -160,58 +111,34 @@ class User:
     def in_group(self, *groups: str) -> bool:
         """True if the user belongs to any of the named groups.
 
-        Groups are plain labels (no hierarchy, no levels) used for
-        limited-access areas. Staff flags (mod+) bypass group checks at
-        the access-rule level, not here -- this method is a pure
-        membership test.
+        Groups are plain labels (no hierarchy, no levels). The only name
+        with built-in meaning is ``sysop``: members of the ``sysop``
+        group have access to everything (see :meth:`can_access`).
         """
         user_groups = {g.lower() for g in (self.groups or [])}
         return any(g.lower() in user_groups for g in groups)
 
     def can_access(self, requires: list[str] | None) -> bool:
-        """True if the user may enter an area requiring ``requires`` groups.
+        """True if the user may enter an area / use a gated feature.
 
-        The area-access rule (see plugin-spec.md, "Groups"):
-          * ``requires`` empty/None -> public area, everyone enters.
-          * staff flags (mod and above) -> always enter.
+        The one access rule (see plugin-spec.md, "Groups"):
+          * ``requires`` empty/None -> public, everyone enters.
+          * user is in the ``sysop`` group -> always enter.
           * otherwise -> grant when the user's groups intersect the
-            required set.
+            required set (any-of).
 
         Plugins pass their resource's requirement list; they never
-        implement the intersection logic themselves.
+        implement the intersection logic themselves. The plugin-level
+        gate itself ("may this user use the plugin at all?") is just
+        ``can_access`` with the plugin's configured requirement --
+        same helper, no separate mechanism.
         """
         reqs = [r for r in (requires or []) if r]
         if not reqs:
             return True
-        if _user_level(self.flags) >= _FLAG_LEVEL["mod"]:
+        if self.in_group(SYSOP_GROUP):
             return True
         return self.in_group(*reqs)
-
-    def has_flag(self, flag: str) -> bool:
-        """True if the user holds the given flag (e.g. ``"mod"``)."""
-        return flag in self.flags
-
-    def has_permission(self, permission: str) -> bool:
-        """True if the user is allowed to perform ``permission``.
-
-        ``permission`` has the form ``"namespace:action"``, e.g.
-        ``"messageboard:delete"``. Authorization is hierarchical by flag level:
-
-        * ``sysop``  -- everything.
-        * ``admin``  -- also all user/system administration namespaces
-          (``users:*``, ``system:*``, ``config:*``, ``auth:*``).
-        * ``mod``    -- also content moderation actions in any namespace
-          (delete, edit, moderate, warn, kick, ban).
-        * ``user``   -- standard actions (post, reply, upload, download...).
-        * ``guest``  -- read-only actions (read, view, list, search).
-
-        A ``namespace:action_own`` permission (e.g. ``"messageboard:delete_own"``)
-        allows any non-guest to act on their own content.
-        """
-        if not permission:
-            return False
-
-        return _user_level(self.flags) >= _required_level(permission)
 
     def verify_password(self, password: str) -> bool:
         """Verify a plaintext password against the stored bcrypt hash."""
@@ -236,7 +163,6 @@ class User:
             "location": self.location,
             "created": self.created.isoformat(),
             "last_login": self.last_login.isoformat() if self.last_login else None,
-            "flags": list(self.flags),
             "groups": list(self.groups),
             "stats": dict(self.stats),
             "preferences": dict(self.preferences),
@@ -260,8 +186,9 @@ class User:
                 _parse_datetime(data["last_login"])
                 if data.get("last_login") else None
             ),
-            flags=list(data.get("flags", ["user"])),
-            groups=[str(g).lower() for g in data.get("groups", [])],
+            # Legacy note: pre-groups user files carried a "flags" key; it is
+            # ignored on load (the sysop reassigns group membership instead).
+            groups=[str(g).lower() for g in data.get("groups", ["user"])],
             stats=dict(data.get("stats", {})),
             preferences=dict(data.get("preferences", {})),
         )
@@ -285,7 +212,7 @@ class UserManager:
     # Fields that may be modified via update(); anything else is rejected.
     _UPDATABLE = {
         "display_name", "email", "location", "password", "password_hash",
-        "flags", "groups", "stats", "preferences", "last_login",
+        "groups", "stats", "preferences", "last_login",
     }
 
     def __init__(self, users_dir: str | Path | None = None):
@@ -364,7 +291,6 @@ class UserManager:
         password: str,
         display_name: str | None = None,
         email: str | None = None,
-        flags: list[str] | None = None,
         location: str | None = None,
         groups: list[str] | None = None,
     ) -> User:
@@ -391,8 +317,7 @@ class UserManager:
             password_hash=password_hash,
             email=email or "",
             location=location,
-            flags=list(flags) if flags is not None else ["user"],
-            groups=[str(g).lower() for g in (groups or [])],
+            groups=[str(g).lower() for g in (groups if groups else ["user"])],
         )
 
         async with self._lock:
@@ -410,7 +335,7 @@ class UserManager:
         are the fields to update (``username`` itself is immutable and rejected
         if passed). Allowed fields: ``display_name``, ``email``, ``password``
         (plaintext, hashed on write), ``password_hash`` (raw, must already be
-        bcrypt), ``flags``, ``stats``, ``preferences``, ``last_login``.
+        bcrypt), ``groups``, ``stats``, ``preferences``, ``last_login``.
         """
         if len(args) > 1:
             raise TypeError("update() takes at most one positional argument (username).")
@@ -446,8 +371,6 @@ class UserManager:
                 user.display_name = fields["display_name"]
             if "email" in fields:
                 user.email = fields["email"]
-            if "flags" in fields:
-                user.flags = list(fields["flags"])
             if "groups" in fields:
                 user.groups = [str(g).lower() for g in (fields["groups"] or [])]
             if "stats" in fields:
